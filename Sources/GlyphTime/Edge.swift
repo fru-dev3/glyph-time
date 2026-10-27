@@ -6,8 +6,7 @@ import GlyphVault
 final class EdgePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
-    /// Grab it anywhere: past 4pt of movement it follows the mouse, and on release it snaps to the
-    /// nearest side. Below that, the click goes to the control under it. A double click puts it back.
+    /// Grab it anywhere: past 4pt of movement it follows the mouse, and it stays where it's let go. Below that, the click goes to the control under it. A double click puts it back.
     private var grab: (mouse: NSPoint, origin: NSPoint)?
     private var moving = false
     private func onScreen(_ e: NSEvent) -> NSPoint { NSPoint(x: frame.minX + e.locationInWindow.x, y: frame.minY + e.locationInWindow.y) }
@@ -42,9 +41,13 @@ final class Edge {
     @ObservationIgnored private var leaving: Task<Void, Never>?
     @ObservationIgnored private(set) var panel: EdgePanel!
 
-    // Where it sits: either side of any display, a height per display, all remembered.
+    // Where it sits, per display: the nearer side, how far in from it (0 = docked), and a height.
     enum Side: String { case left, right }
     var side: Side = .right
+    var inset: Double = 0
+    var docked: Bool { inset < 1 }
+    /// Keep the card open while a session runs, or fold it to the tile (and on hover-out).
+    var keepOpen = false
     @ObservationIgnored var dragging = false
     @ObservationIgnored private var centerY: Double?
     @ObservationIgnored private var screenID: UInt32?
@@ -60,25 +63,37 @@ final class Edge {
         guard let s = screen else { return }
         side = Side(rawValue: d.string(forKey: "edgeSide.\(Self.id(s))") ?? "") ?? .right
         centerY = d.object(forKey: "edgeY.\(Self.id(s))") as? Double
+        inset = d.double(forKey: "edgeInset.\(Self.id(s))")
+        keepOpen = d.bool(forKey: "keepOpen")
     }
 
-    /// Released: onto the display under its centre, the nearer side, the height it was let go at.
+    func setKeepOpen(_ on: Bool) {
+        keepOpen = on
+        spots?.set(on, forKey: "keepOpen")
+        if !on { withAnimation(.smooth(duration: 0.28)) { hovering = false } }
+    }
+    func toggleKeepOpen() { setKeepOpen(!keepOpen) }
+
+    /// Released: exactly where it was let go, kept on the display under its centre. It's anchored to
+    /// the nearer side, so the card opens toward the free space.
     func drop() {
         guard let panel else { return }
         let c = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
         let s = NSScreen.screens.first { $0.frame.contains(c) } ?? screen ?? NSScreen.screens[0]
         screenID = Self.id(s); centerY = c.y
         side = c.x < s.visibleFrame.midX ? .left : .right
+        let v = s.visibleFrame
+        inset = max(0, side == .right ? v.maxX - panel.frame.maxX : panel.frame.minX - v.minX)
         let k = Self.id(s)
-        spots?.set(NSNumber(value: k), forKey: "edgeScreen"); spots?.set(side.rawValue, forKey: "edgeSide.\(k)"); spots?.set(c.y, forKey: "edgeY.\(k)")
+        spots?.set(NSNumber(value: k), forKey: "edgeScreen"); spots?.set(side.rawValue, forKey: "edgeSide.\(k)"); spots?.set(c.y, forKey: "edgeY.\(k)"); spots?.set(inset, forKey: "edgeInset.\(k)")
         dragging = false
         fit()
     }
 
     func resetPosition() {
-        if let s = screen { spots?.removeObject(forKey: "edgeSide.\(Self.id(s))"); spots?.removeObject(forKey: "edgeY.\(Self.id(s))") }
+        if let s = screen { spots?.removeObject(forKey: "edgeSide.\(Self.id(s))"); spots?.removeObject(forKey: "edgeY.\(Self.id(s))"); spots?.removeObject(forKey: "edgeInset.\(Self.id(s))") }
         spots?.removeObject(forKey: "edgeScreen")
-        screenID = nil; centerY = nil; side = .right
+        screenID = nil; centerY = nil; side = .right; inset = 0
         fit()
     }
 
@@ -128,7 +143,8 @@ final class Edge {
         guard size.width > 0 else { return }
         let cy = centerY ?? screen.midY + screen.height * 0.08
         let y = min(max(cy - size.height / 2, screen.minY), screen.maxY - size.height).rounded()
-        let frame = NSRect(x: side == .right ? screen.maxX - size.width : screen.minX, y: y, width: size.width, height: size.height)
+        let x = side == .right ? screen.maxX - size.width - inset : screen.minX + inset
+        let frame = NSRect(x: min(max(x, screen.minX), screen.maxX - size.width).rounded(), y: y, width: size.width, height: size.height)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
     }
 
@@ -194,7 +210,7 @@ private struct EdgeView: View {
     private let edge = Edge.shared
     @Environment(\.colorScheme) private var scheme
 
-    private var open: Bool { edge.hovering || clock.nudge != nil }
+    private var open: Bool { edge.hovering || clock.nudge != nil || (edge.keepOpen && clock.session != nil) }
 
     var body: some View {
         let p = Palette(scheme)
@@ -221,9 +237,11 @@ private struct EdgeView: View {
 private struct EdgeShape: InsettableShape {
     var radius: CGFloat
     var left = false // on the left side of the screen, rounded on the right
+    var all = false // floating free: every corner rounded
     var inset: CGFloat = 0
     func path(in rect: CGRect) -> Path {
         let r = max(0, radius - inset)
+        if all { return RoundedRectangle(cornerRadius: r, style: .continuous).path(in: rect.insetBy(dx: inset, dy: inset)) }
         return (left ? UnevenRoundedRectangle(bottomTrailingRadius: r, topTrailingRadius: r, style: .continuous)
                      : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, style: .continuous))
             .path(in: rect.insetBy(dx: inset, dy: inset))
@@ -234,11 +252,11 @@ private struct EdgeShape: InsettableShape {
 private extension View {
     /// Glass in the panel's colours, a hairline (green while a session runs), a soft shadow.
     func edgeBackground(_ radius: CGFloat, _ p: Palette, live: Bool = false) -> some View {
-        let left = Edge.shared.side == .left
-        return background(EdgeShape(radius: radius, left: left).fill(p.fill))
-            .overlay(EdgeShape(radius: radius, left: left).strokeBorder(live ? p.green.opacity(0.55) : p.hairline, lineWidth: live ? 1 : 0.5))
-            .clipShape(EdgeShape(radius: radius, left: left))
-            .padding(.vertical, 6).padding(left ? .trailing : .leading, 6) // room for the shadow
+        let left = Edge.shared.side == .left, all = !Edge.shared.docked
+        return background(EdgeShape(radius: radius, left: left, all: all).fill(p.fill))
+            .overlay(EdgeShape(radius: radius, left: left, all: all).strokeBorder(live ? p.green.opacity(0.55) : p.hairline, lineWidth: live ? 1 : 0.5))
+            .clipShape(EdgeShape(radius: radius, left: left, all: all))
+            .padding(.vertical, 6).padding(all ? .horizontal : left ? .trailing : .leading, 6) // room for the shadow
             .shadow(color: .black.opacity(p.dark ? 0.28 : 0.14), radius: 6, x: left ? 1 : -1, y: 1)
     }
 }
@@ -350,7 +368,7 @@ private struct Card: View {
     /// in its current format (so it never jumps as the seconds tick), rounded up to the grid.
     private var contentWidth: CGFloat {
         let time = width(String(digits.map { $0.isNumber ? "8" : $0 }), digitFont) // grows only when the format does
-        let header = 20 + 8 + width(title, .systemFont(ofSize: 15, weight: .semibold))
+        let header = 20 + 8 + width(title, .systemFont(ofSize: 15, weight: .semibold)) + 44 // gap, spacer, gap, the keep-open control
         let pill = NSFont.systemFont(ofSize: 13, weight: .semibold)
         let answers = clock.nudge == nil ? 0 : width("Keep going", pill) + width("Stop", pill) + 4 * 16 + 8
         let keys: CGFloat = clock.session == nil ? 2 : 3 // primary, stop, More
@@ -366,6 +384,8 @@ private struct Card: View {
                     .foregroundStyle(clock.nudge == nil && (clock.guessed || clock.session == nil) ? p.soft : p.ink.opacity(0.88))
                     .lineLimit(1)
                     .accessibilityIdentifier("title")
+                Spacer(minLength: 8)
+                KeepOpen(p: p)
             }
             .frame(height: 20)
             Text(digits)
@@ -487,5 +507,27 @@ private struct Count: View {
         .onTapGesture { Edge.shared.hover(true) }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("count")
+    }
+}
+
+/// The card's top-right corner, its only control there: keep the card open while a session runs,
+/// or fold it to the tile and time.
+private struct KeepOpen: View {
+    let p: Palette
+    var body: some View {
+        let on = Edge.shared.keepOpen, label = on ? "Minimize" : "Keep Open"
+        Button { Edge.shared.toggleKeepOpen() } label: {
+            Image(systemName: on ? "arrow.down.right.and.arrow.up.left" : "pin")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(p.ink.opacity(0.5))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(-4) // a 28pt target in the 20pt header row
+        .accessibilityLabel(label)
+        .help(label)
+        .testFrame(label)
+        .id(label)
     }
 }

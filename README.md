@@ -97,6 +97,9 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.5** (2026-10-27): put the clock anywhere on the screen: it stays exactly where you drop it,
+  never under the menu bar or the Dock. Keep it open while a session runs, or minimize it to the icon
+  and time: the button at its top right, Keep Clock Open in the menu bar, or Control Option M.
 - **0.1.4** (2026-10-27): Glyph Time is in the Dock as well as the menu bar. Settings can hide either
   one (never both). A click on the Dock icon opens the clock; a second click opens Settings.
 - **0.1.3** (2026-10-27): the clock is redesigned: one column, even spacing, and the Glyph Time icon

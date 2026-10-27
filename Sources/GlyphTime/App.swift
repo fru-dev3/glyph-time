@@ -10,6 +10,7 @@ let log = Logger(subsystem: "dev.fru.time", category: "app")
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?
+    private var minimizeKey: HotKey?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // One clock per Mac.
@@ -26,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Watch.start()
         // Control-Option-T: start, pause or resume from anywhere, without leaving what you're in.
         hotKey = HotKey(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(controlKey | optionKey)) { Clock.shared.toggle() }
+        // Control-Option-M: keep the card open, or fold it to the tile.
+        minimizeKey = HotKey(keyCode: UInt32(kVK_ANSI_M), modifiers: UInt32(controlKey | optionKey)) { Edge.shared.toggleKeepOpen() }
         log.notice("launch: host \(Store.host, privacy: .public), folder \(Store.folder.path, privacy: .public), repo names \(AXIsProcessTrusted()), hotkey \(self.hotKey?.registered ?? false)")
         UITest.start()
     }
@@ -180,6 +183,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         edge.state = Edge.shared.shown ? .on : .off
         edge.representedObject = { Edge.shared.shown.toggle() } as AnyObject
         menu.addItem(edge)
+        add(Edge.shared.keepOpen ? "Minimize Clock" : "Keep Clock Open") { Edge.shared.toggleKeepOpen() }
         add("Reset Clock Position") { Edge.shared.resetPosition() }
         add("Open Sessions Folder") { NSWorkspace.shared.open(Store.folder) }
         add("Settings...", ",", [.command]) { SettingsWindow.show() }

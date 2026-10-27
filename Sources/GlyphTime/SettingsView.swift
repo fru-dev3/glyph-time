@@ -85,6 +85,7 @@ struct SettingsView: View {
                     .onChange(of: login) { _, on in setLogin(on) }
                 if let loginProblem { Text(loginProblem).foregroundStyle(.secondary).font(.callout) }
                 LabeledContent("Start or pause") { Text("Control Option T").foregroundStyle(.secondary) }
+                LabeledContent("Minimize or keep open") { Text("Control Option M").foregroundStyle(.secondary) }
             } footer: {
                 Text("Without access, a session is named after the app in front. Only the folder name is kept, never a window title.")
                     .foregroundStyle(.secondary)
