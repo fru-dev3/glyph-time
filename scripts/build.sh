@@ -6,8 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION=0.1.2
-BUILD=3
+VERSION=0.1.3
+BUILD=4
 
 swift build -c release --product GlyphTime
 

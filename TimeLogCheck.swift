@@ -65,4 +65,17 @@ let sum = TimeLog.summary(s, now: at(80), calendar: utc)
 assert(sum.contains("## Today, ") && sum.contains("- Northwind: 45 min (1 session)") && sum.contains("- Run: 30 min (1 session)"), sum)
 assert(sum.contains("## Last week, from") && sum.contains("Nothing timed.") && sum.contains("- laptop-local: 45 min"), sum)
 assert(!sum.contains("\u{2014}"), "no em dashes")
+
+// Alarms and reminders: lines in the same file, folded apart; a cancel takes one back; sessions ignore them.
+let ph = "iphone-16-pro"
+let marks: [TimeEvent] = [
+    TimeEvent("alarm", at: at(1), host: ph, at: at(600), label: "Gym", id: "a1"),
+    TimeEvent("reminder", at: at(2), host: ph, at: at(120), label: "Call Sam", id: "r1"),
+    TimeEvent("reminder", at: at(3), host: ph, at: at(90), label: "Gone", id: "r2"),
+    TimeEvent("reminder", at: at(4), host: ph, answer: "cancel", id: "r2"),
+]
+let rl = TimeLog.line(marks[0])
+assert(TimeLog.events(in: rl) == [marks[0]] && String(decoding: rl, as: UTF8.self).contains("\"label\":\"Gym\""))
+assert(TimeLog.reminders(marks.shuffled()).map(\.label) == ["Call Sam", "Gym"])
+assert(TimeLog.sessions(marks + day).count == 2)
 print("TimeLog ok")

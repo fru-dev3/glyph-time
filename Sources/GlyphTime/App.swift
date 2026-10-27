@@ -139,6 +139,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         edge.state = Edge.shared.shown ? .on : .off
         edge.representedObject = { Edge.shared.shown.toggle() } as AnyObject
         menu.addItem(edge)
+        add("Reset Clock Position") { Edge.shared.resetPosition() }
         add("Open Sessions Folder") { NSWorkspace.shared.open(Store.folder) }
         add("Settings...", ",", [.command]) { SettingsWindow.show() }
         menu.addItem(.separator())

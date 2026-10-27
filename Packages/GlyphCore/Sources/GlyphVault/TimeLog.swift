@@ -13,7 +13,10 @@ import Foundation
 ///
 /// Events: start (project, source, app, countdown), name (renames the open session), pause
 /// (reason: user, idle, sleep, lock), resume, stop (minutes, for people reading the file), nudge
-/// (minutes, answer: keep, stop, ignored, done). Lines with other events are kept but not folded.
+/// (minutes, answer: keep, stop, ignored, done), alarm and reminder (the phone: id, at, label;
+/// the same id again with answer "cancel" takes it back). Lines with other events are kept but not folded.
+///
+///     {"at":"2026-10-28T06:30:00-05:00","event":"alarm","host":"iphone-16-pro","id":"7F3A...","label":"Gym","ts":"2026-10-27T21:02:11-05:00"}
 public struct TimeEvent: Codable, Equatable, Sendable {
     public var ts: Date
     public var event: String
@@ -29,13 +32,19 @@ public struct TimeEvent: Codable, Equatable, Sendable {
     /// A countdown's length in minutes; none for a count-up.
     public var countdown: Int?
     public var answer: String?
+    /// An alarm's or reminder's: when it goes off, what it says, and its id (to cancel it).
+    public var at: Date?
+    public var label: String?
+    public var id: String?
 
     public init(_ event: String, at ts: Date = .now, host: String, device: String? = nil, project: String? = nil,
                 source: String? = nil, app: String? = nil, reason: String? = nil, minutes: Int? = nil,
-                countdown: Int? = nil, answer: String? = nil) {
+                countdown: Int? = nil, answer: String? = nil,
+                at: Date? = nil, label: String? = nil, id: String? = nil) {
         self.ts = ts; self.event = event; self.host = host; self.device = device; self.project = project
         self.source = source; self.app = app; self.reason = reason; self.minutes = minutes
         self.countdown = countdown; self.answer = answer
+        self.at = at; self.label = label; self.id = id
     }
 }
 
@@ -189,6 +198,17 @@ public enum TimeLog {
             }
         }
         return (done + open.values).sorted { $0.start < $1.start }
+    }
+
+    /// Alarms and reminders still set (not taken back), soonest first. Past ones are kept: the
+    /// caller decides what "upcoming" means.
+    public static func reminders(_ events: [TimeEvent]) -> [TimeEvent] {
+        var set: [String: TimeEvent] = [:]
+        for e in events.sorted(by: { $0.ts < $1.ts }) where e.event == "alarm" || e.event == "reminder" {
+            guard let id = e.id else { continue }
+            if e.answer == "cancel" { set[id] = nil } else if e.at != nil { set[id] = e }
+        }
+        return set.values.sorted { $0.at! < $1.at! }
     }
 
     /// Seconds per project for sessions that started in [from, to), biggest first. A session is

@@ -97,6 +97,9 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.3** (2026-10-27): the clock is redesigned: one column, even spacing, and the Glyph Time icon
+  at the edge when closed, with a green ring while it runs. Drag it to either edge; it remembers
+  where. Double-click or Reset Clock Position puts it back.
 - **0.1.2** (2026-10-27): branded. The runner in the menu bar and at the top of the clock, office
   green for the running state, the main control and a line filling toward the next nudge (a ring on
   the small count), a green tab when idle, light and dark panels, the icon and name atop the menu
@@ -110,3 +113,10 @@ Accessibility needed for it), `CGEventSource` for idle time.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## On the iPhone
+
+The Glyph iPhone app (1.18) has Time under More: the same lines, in its own
+`<YYYY-MM>.iphone-<model>.jsonl`, sent whole over your private network into the same sessions
+folder. This app merges every file there, so phone sessions show in Today and in the summary.
+Alarm and reminder lines are kept but not folded into sessions.

@@ -68,6 +68,14 @@ enum UITest {
     /// window server would. The panel stays non-activating, so nothing else loses focus.
     @discardableResult
     static func press(_ text: String) async -> Bool {
+        // A card sliding in reports its frames as it moves: wait until the control holds still.
+        var last: CGRect?
+        for _ in 0..<30 {
+            let now = find(text)
+            if now != nil, now == last { break }
+            last = now
+            await wait(0.05)
+        }
         guard let f = find(text), let v = Edge.shared.panel.contentView else { check(false, "the edge shows '\(text)'"); return false }
         let panel = Edge.shared.panel!
         let point = NSPoint(x: f.midX, y: v.bounds.height - f.midY) // SwiftUI measures from the top
@@ -97,6 +105,21 @@ enum UITest {
         try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent(name + ".png"))
     }
 
+    /// A real drag on the panel: mouse down at its centre, moves, mouse up, by (dx, dy) points.
+    static func drag(_ dx: CGFloat, _ dy: CGFloat) async {
+        let panel = Edge.shared.panel!
+        let s0 = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        func send(_ type: NSEvent.EventType, _ f: CGFloat) {
+            let at = NSPoint(x: s0.x + dx * f - panel.frame.minX, y: s0.y + dy * f - panel.frame.minY)
+            if let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                          windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { panel.sendEvent(e) }
+        }
+        send(.leftMouseDown, 0)
+        for i in 1...10 { send(.leftMouseDragged, CGFloat(i) / 10); await wait(0.02) }
+        send(.leftMouseUp, 1)
+        await wait(0.4)
+    }
+
     static func open(_ on: Bool) async {
         Edge.shared.hover(on)
         await wait(on ? 0.4 : 0.9)
@@ -112,7 +135,7 @@ enum UITest {
 
         print("Nothing running")
         check(clock.session == nil && lines.isEmpty, "starts with nothing running and an empty folder")
-        check(edge.panel.isVisible && edge.panel.frame.width < 30, "a thin tab on the edge (\(Int(edge.panel.frame.width)) pt)")
+        check(edge.panel.isVisible && edge.panel.frame.width < 60, "the Runner tile on the edge (\(Int(edge.panel.frame.width)) pt)")
         check(abs(edge.panel.frame.maxX - screen.maxX) < 1, "flush with the right edge of the screen")
         check(!edge.panel.canBecomeMain && edge.panel.styleMask.contains(.nonactivatingPanel), "the panel can't take the app's focus")
         await shot("01-tab")
@@ -155,7 +178,7 @@ enum UITest {
         minute = 0.1 // 30 minutes = 3 seconds
         check(await until(5) { clock.nudge != nil }, "a nudge slides out at the boundary")
         await wait(0.5)
-        check(clock.nudge?.contains("on acme-api") == true && edge.panel.isVisible && edge.panel.frame.width > 200, "it says how long and on what (\(clock.nudge ?? "-"))")
+        check(clock.nudge?.contains("on acme-api") == true && edge.panel.isVisible && edge.panel.frame.width > 150, "it says how long and on what (\(clock.nudge ?? "-"))")
         await shot("08-nudge")
         await press("Keep going")
         check(clock.nudge == nil && last?.event == "nudge" && last?.answer == "keep" && clock.running, "Keep going answers it and the clock runs on")
@@ -163,7 +186,7 @@ enum UITest {
         check(await until(5) { clock.nudge == nil }, "left alone, it fades back by itself")
         check(lines.last { $0.event == "nudge" }?.answer == "ignored", "an ignored nudge is written as ignored")
         let before = lines.filter { $0.event == "nudge" }.count
-        await wait(2.2) // the skipped boundary passes; the one after is still a second away
+        await wait(1.2) // the skipped boundary (half a second after the fade) passes; the one after is over two seconds away
         check(clock.nudge == nil && lines.filter { $0.event == "nudge" }.count == before, "after an ignored nudge the next boundary stays quiet")
         minute = nil
         check(await until(4) { clock.nudge == nil }, "back on a real clock, no more nudges")
@@ -185,6 +208,23 @@ enum UITest {
         check(clock.session == nil && last?.event == "stop" && lines.last { $0.event == "nudge" }?.answer == "stop", "Stop in the nudge ends the session")
         minute = nil
         await shot("12-tab-again")
+
+        print("Moving it")
+        let panel = edge.panel!
+        await drag(-(screen.width - 120), 0)
+        check(abs(panel.frame.minX - screen.minX) < 1 && edge.side == .left, "dragged left, it snaps to the left edge")
+        await drag(0, 5000)
+        check(panel.frame.maxY <= screen.maxY + 0.5 && abs(panel.frame.minX - screen.minX) < 1, "dragged up, it stops under the menu bar")
+        await shot("15-tab-left")
+        await drag(screen.width - 120, -5000)
+        check(abs(panel.frame.maxX - screen.maxX) < 1 && panel.frame.minY >= screen.minY - 0.5 && edge.side == .right, "dragged right and down, it snaps right and stays above the Dock")
+        check(!NSApp.isActive, "dragging never makes Glyph Time active")
+        let low = panel.frame.minY
+        edge.fit()
+        check(abs(panel.frame.minY - low) < 1, "it remembers where it was put")
+        edge.resetPosition()
+        await wait(0.3)
+        check(abs(panel.frame.maxX - screen.maxX) < 1 && panel.frame.minY > low + 50, "Reset Clock Position puts it back")
 
         print("Menu bar")
         let menu = NSMenu()
