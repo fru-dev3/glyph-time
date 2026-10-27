@@ -2,3 +2,5 @@
 build/
 dist/
 .swiftpm/
+.unlazy/
+.unlazy-archive/
