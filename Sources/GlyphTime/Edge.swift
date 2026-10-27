@@ -88,6 +88,8 @@ final class Edge {
         spots?.set(NSNumber(value: k), forKey: "edgeScreen"); spots?.set(side.rawValue, forKey: "edgeSide.\(k)"); spots?.set(c.y, forKey: "edgeY.\(k)"); spots?.set(inset, forKey: "edgeInset.\(k)")
         dragging = false
         fit()
+        // Hover-out was held during the drag: if the pointer ended up outside, close as usual.
+        if !UITest.on, !panel.frame.contains(NSEvent.mouseLocation) { hover(false) }
     }
 
     func resetPosition() {
@@ -167,7 +169,7 @@ final class Edge {
             // A short grace, so passing over the edge doesn't make it flicker.
             leaving = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, !dragging else { return } // a fast drag can outrun the panel for a moment
                 withAnimation(.smooth(duration: 0.28)) { hovering = false }
                 Clock.shared.hoverEnded()
             }
@@ -226,7 +228,7 @@ private struct EdgeView: View {
             }
         }
         .fixedSize()
-        .onHover { edge.hover($0) }
+        .onHover { if !UITest.on { edge.hover($0) } } // the UI check drives hover itself; a stray real pointer must not
         .onGeometryChange(for: CGSize.self) { $0.size } action: { edge.fit($0) }
         .animation(.smooth(duration: 0.25), value: open)
         .animation(.smooth(duration: 0.25), value: clock.session == nil)

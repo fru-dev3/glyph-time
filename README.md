@@ -97,6 +97,7 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.6** (2026-10-27): dragging the open clock no longer folds it mid-drag.
 - **0.1.5** (2026-10-27): put the clock anywhere on the screen: it stays exactly where you drop it,
   never under the menu bar or the Dock. Keep it open while a session runs, or minimize it to the icon
   and time: the button at its top right, Keep Clock Open in the menu bar, or Control Option M.
