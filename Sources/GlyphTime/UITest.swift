@@ -226,6 +226,38 @@ enum UITest {
         await wait(0.3)
         check(abs(panel.frame.maxX - screen.maxX) < 1 && panel.frame.minY > low + 50, "Reset Clock Position puts it back")
 
+        print("Dock and menu bar")
+        func shows(_ dock: Bool, _ bar: Bool) -> Bool {
+            NSApp.activationPolicy() == (dock ? .regular : .accessory) && StatusMenu.shared.item.isVisible == bar && edge.panel.isVisible
+        }
+        Presence.inDock = true; Presence.inMenuBar = true; await wait(0.3)
+        check(shows(true, true), "both: in the Dock and the menu bar, and the edge clock stays")
+        Presence.inDock = false; await wait(0.3)
+        check(shows(false, true), "menu bar only: out of the Dock, the edge clock stays")
+        Presence.inMenuBar = false; await wait(0.3)
+        check(shows(false, true) && Presence.inMenuBar, "neither is refused: the menu bar item stays")
+        Presence.inDock = true; Presence.inMenuBar = false; await wait(0.3)
+        check(shows(true, false), "Dock only: no menu bar item, and the edge clock stays")
+        Presence.inDock = false; await wait(0.3)
+        check(shows(true, false) && Presence.inDock, "neither is refused: the Dock icon stays")
+        Presence.inMenuBar = true; await wait(0.3)
+        check(shows(true, true), "both again")
+
+        print("Dock click")
+        if let app = NSApp.delegate as? AppDelegate {
+            _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            await wait(0.6)
+            check(edge.hovering && edge.panel.isVisible, "a Dock click opens the card")
+            _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            await wait(0.6)
+            check(SettingsWindow.current?.isVisible == true, "a second Dock click opens Settings")
+            SettingsWindow.current?.close()
+        } else {
+            check(false, "the app delegate answers Dock clicks")
+        }
+        edge.hover(false)
+        await wait(1)
+
         print("Menu bar")
         let menu = NSMenu()
         StatusMenu.shared.menuNeedsUpdate(menu)

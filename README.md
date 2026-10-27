@@ -97,6 +97,8 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.4** (2026-10-27): Glyph Time is in the Dock as well as the menu bar. Settings can hide either
+  one (never both). A click on the Dock icon opens the clock; a second click opens Settings.
 - **0.1.3** (2026-10-27): the clock is redesigned: one column, even spacing, and the Glyph Time icon
   at the edge when closed, with a green ring while it runs. Drag it to either edge; it remembers
   where. Double-click or Reset Clock Position puts it back.

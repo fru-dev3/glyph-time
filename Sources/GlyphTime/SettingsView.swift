@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage("folder") private var folder = ""
     @State private var trusted = AXIsProcessTrusted()
     @State private var login = SMAppService.mainApp.status == .enabled
+    @State private var dock = Presence.inDock
+    @State private var bar = Presence.inMenuBar
     @State private var loginProblem: String?
 
     var body: some View {
@@ -65,6 +67,18 @@ struct SettingsView: View {
                             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
                         }
                     }
+                }
+                Toggle("Show in Dock", isOn: $dock)
+                    .tint(.office)
+                    .disabled(!bar)
+                    .onChange(of: dock) { _, on in Presence.inDock = on }
+                Toggle("Show in menu bar", isOn: $bar)
+                    .tint(.office)
+                    .disabled(!dock)
+                    .onChange(of: bar) { _, on in Presence.inMenuBar = on }
+                if !dock || !bar {
+                    Text("Glyph Time needs the Dock or the menu bar to stay reachable.")
+                        .foregroundStyle(.secondary).font(.callout)
                 }
                 Toggle("Open at login", isOn: $login)
                     .tint(.office)

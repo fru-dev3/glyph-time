@@ -97,6 +97,7 @@ final class Edge {
         panel.backgroundColor = .clear
         panel.hasShadow = false // the view draws its own, softer
         panel.hidesOnDeactivate = false
+        panel.canHide = false // a Dock click hides the app to hand focus back; the clock stays
         panel.becomesKeyOnlyIfNeeded = true
         panel.isMovable = false
         let host = NSHostingView(rootView: EdgeView())
@@ -129,6 +130,17 @@ final class Edge {
         let y = min(max(cy - size.height / 2, screen.minY), screen.maxY - size.height).rounded()
         let frame = NSRect(x: side == .right ? screen.maxX - size.width : screen.minX, y: y, width: size.width, height: size.height)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
+    }
+
+    /// Opened from the Dock: the card shows, and closes again if the mouse never comes to it.
+    func peek() {
+        if !shown { shown = true }
+        hover(true)
+        leaving = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let panel, !panel.frame.contains(NSEvent.mouseLocation) else { return }
+            hover(false)
+        }
     }
 
     func hover(_ inside: Bool) {

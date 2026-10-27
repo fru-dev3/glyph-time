@@ -22,11 +22,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Clock.shared.load()
         Edge.shared.setUp()
         StatusMenu.shared.setUp()
+        Presence.apply() // after launch as an accessory, so joining the Dock takes no focus
         Watch.start()
         // Control-Option-T: start, pause or resume from anywhere, without leaving what you're in.
         hotKey = HotKey(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(controlKey | optionKey)) { Clock.shared.toggle() }
         log.notice("launch: host \(Store.host, privacy: .public), folder \(Store.folder.path, privacy: .public), repo names \(AXIsProcessTrusted()), hotkey \(self.hotKey?.registered ?? false)")
         UITest.start()
+    }
+
+    /// A click on the Dock icon: the card if it's closed (and focus goes straight back to the app you
+    /// were in), Settings if the card or Settings is already open.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if Edge.shared.hovering || SettingsWindow.current?.isVisible == true {
+            SettingsWindow.show()
+        } else {
+            Edge.shared.peek()
+            NSApp.hide(nil) // the panel can't hide, so it stays; the front app gets its focus back
+        }
+        return false
+    }
+}
+
+/// Where Glyph Time shows besides the edge: the Dock, the menu bar, or both (by default). Never
+/// neither, or there'd be no way back to Settings once the edge clock is hidden.
+@MainActor
+enum Presence {
+    static let dockKey = "showInDock", barKey = "showInMenuBar"
+    /// The UI check keeps its own settings, so it never changes the real ones.
+    private static let store = UITest.on ? UserDefaults(suiteName: "dev.fru.time.uitest")! : .standard
+
+    static var inDock: Bool {
+        get { store.object(forKey: dockKey) == nil || store.bool(forKey: dockKey) } // "NO" from the command line too
+        set { if newValue || inMenuBar { store.set(newValue, forKey: dockKey); apply() } }
+    }
+    static var inMenuBar: Bool {
+        get { store.object(forKey: barKey) == nil || store.bool(forKey: barKey) } // "NO" from the command line too
+        set { if newValue || inDock { store.set(newValue, forKey: barKey); apply() } }
+    }
+
+    static func apply() {
+        let dock = inDock || !inMenuBar // both off (set by hand) still leaves the Dock
+        NSApp.setActivationPolicy(dock ? .regular : .accessory)
+        StatusMenu.shared.item?.isVisible = inMenuBar
+        // Changing the policy can send Settings behind other windows: bring it back.
+        if let w = SettingsWindow.current, w.isVisible {
+            DispatchQueue.main.async { NSApp.activate(); w.makeKeyAndOrderFront(nil) }
+        }
     }
 }
 
@@ -220,7 +261,7 @@ enum Main {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.accessory) // Presence moves it into the Dock once launched
         app.run()
     }
 }
