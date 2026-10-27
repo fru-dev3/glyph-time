@@ -21,6 +21,9 @@ enum UITest {
         guard on, let i = CommandLine.arguments.firstIndex(of: "--uitest") else { return }
         if i + 1 < CommandLine.arguments.count { out = URL(fileURLWithPath: CommandLine.arguments[i + 1]) }
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        if let a = CommandLine.arguments.firstIndex(of: "--appearance"), a + 1 < CommandLine.arguments.count {
+            NSApp.appearance = NSAppearance(named: CommandLine.arguments[a + 1] == "dark" ? .darkAqua : .aqua)
+        }
         Task {
             try? await Task.sleep(for: .seconds(1))
             await run()
@@ -193,6 +196,12 @@ enum UITest {
         check(menu.items.contains { $0.attributedTitle?.string.hasPrefix("acme-api\t") == true }, "Today lists acme-api with its time")
         if let start = menu.items.first(where: { $0.title == "Start" }) { menu.performActionForItem(at: menu.index(of: start)) }
         check(clock.running, "Start in the menu starts")
+        if let b = StatusMenu.shared.item.button, let rep = b.bitmapImageRepForCachingDisplay(in: b.bounds) {
+            b.cacheDisplay(in: b.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("14-menubar.png"))
+        }
+        check(NSImage(named: "MenuBar") != nil, "the menu bar shows the runner")
+        check(menu.items.first?.title == "Glyph Time" && menu.items.first?.image != nil, "the menu is headed by the icon and Glyph Time")
         check(StatusMenu.shared.item.button?.title.contains("0:0") == true, "the menu bar shows the time (\(StatusMenu.shared.item.button?.title ?? "-"))")
         StatusMenu.shared.menuNeedsUpdate(menu)
         check(menu.items.contains { $0.title == "Pause" } && menu.items.contains { $0.title == "Name This Session..." }, "running, the menu offers Pause and Name")

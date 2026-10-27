@@ -81,28 +81,53 @@ final class Edge {
 }
 
 extension Color {
-    /// Office green #008000, and a brighter cut for small marks on the dark panel.
+    /// Office green #008000, and a brighter cut for small marks on a dark panel.
     static let office = Color(red: 0, green: 128 / 255, blue: 0)
     static let officeOnDark = Color(red: 0.2, green: 0.72, blue: 0.2)
+}
+
+/// The panel's colours, light and dark: quiet glass, ink, and office green for what matters.
+struct Palette {
+    let dark: Bool
+    init(_ scheme: ColorScheme) { dark = scheme == .dark }
+    var fill: Color { dark ? Color(white: 0.09).opacity(0.94) : Color(white: 0.985).opacity(0.97) }
+    var hairline: Color { dark ? .white.opacity(0.09) : .black.opacity(0.09) }
+    var ink: Color { dark ? .white : Color(white: 0.1) }
+    var soft: Color { ink.opacity(0.5) }
+    var track: Color { ink.opacity(dark ? 0.14 : 0.09) }
+    var green: Color { dark ? .officeOnDark : .office }
+}
+
+/// The family mark: Glyph Time's own icon, the runner.
+private struct Mark: View {
+    var size: CGFloat = 20
+    var body: some View {
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable().interpolation(.high)
+            .frame(width: size * 1.24, height: size * 1.24) // the icon's tile is 824 of 1024
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
 }
 
 private struct EdgeView: View {
     private let clock = Clock.shared
     private let edge = Edge.shared
+    @Environment(\.colorScheme) private var scheme
 
     private var open: Bool { edge.hovering || clock.nudge != nil }
 
     var body: some View {
+        let p = Palette(scheme)
         Group {
             if open {
-                Card(clock: clock)
+                Card(clock: clock, p: p)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if clock.session != nil {
-                Count(clock: clock)
+                Count(clock: clock, p: p)
                     .transition(.opacity)
             } else {
-                // Nothing running: a thin tab to reach for.
-                Tab()
+                Tab(p: p)
             }
         }
         .fixedSize()
@@ -126,88 +151,105 @@ private struct EdgeShape: InsettableShape {
 }
 
 private extension View {
-    func edgeBackground(_ radius: CGFloat) -> some View {
-        background(EdgeShape(radius: radius).fill(Color(white: 0.09).opacity(0.94)))
-            .overlay(EdgeShape(radius: radius).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+    /// Glass in the panel's colours, a hairline (green while a session runs), a soft shadow.
+    func edgeBackground(_ radius: CGFloat, _ p: Palette, live: Bool = false) -> some View {
+        background(EdgeShape(radius: radius).fill(p.fill))
+            .overlay(EdgeShape(radius: radius).strokeBorder(live ? p.green.opacity(0.55) : p.hairline, lineWidth: live ? 1 : 0.5))
             .clipShape(EdgeShape(radius: radius))
             .padding(.vertical, 6).padding(.leading, 6) // room for the shadow
-            .shadow(color: .black.opacity(0.22), radius: 5, x: -1, y: 1)
+            .shadow(color: .black.opacity(p.dark ? 0.28 : 0.14), radius: 6, x: -1, y: 1)
     }
 }
 
+/// Nothing running: a thin tab with a green line, to reach for.
 private struct Tab: View {
+    let p: Palette
     var body: some View {
-        Rectangle().fill(.clear)
-            .frame(width: 6, height: 40)
-            .edgeBackground(3)
+        Capsule().fill(p.green)
+            .frame(width: 2.5, height: 18)
+            .frame(width: 8, height: 40)
+            .edgeBackground(4, p)
             .accessibilityElement()
             .accessibilityLabel("Glyph Time")
             .accessibilityIdentifier("tab")
     }
 }
 
-/// The resting count: a dot and the time.
-private struct Count: View {
-    let clock: Clock
-
+/// A ring that fills toward the next nudge (or a countdown's end): green while running, grey paused.
+private struct Ring: View {
+    let progress: Double, running: Bool, p: Palette
+    var size: CGFloat = 13
     var body: some View {
-        HStack(spacing: 7) {
-            Mark(clock: clock)
+        ZStack {
+            Circle().stroke(p.track, lineWidth: 2)
+            Circle().trim(from: 0, to: max(0.02, progress))
+                .stroke(running ? p.green : p.soft, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+        .animation(.linear(duration: 1), value: progress)
+    }
+}
+
+/// The resting count: the ring and the time.
+private struct Count: View {
+    let clock: Clock, p: Palette
+    var body: some View {
+        HStack(spacing: 8) {
+            Ring(progress: clock.progress, running: clock.running, p: p)
             Text(clock.display)
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
-                .foregroundStyle(.white.opacity(clock.paused ? 0.5 : 0.95))
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(clock.paused ? p.soft : p.ink)
                 .contentTransition(.numericText())
         }
-        .padding(.leading, 12).padding(.trailing, 11)
+        .padding(.leading, 11).padding(.trailing, 11)
         .frame(height: 30)
-        .edgeBackground(9)
+        .edgeBackground(9, p, live: clock.running)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("count")
     }
 }
 
-/// Green while running, a hollow grey ring while paused, a small timer for a countdown.
-private struct Mark: View {
-    let clock: Clock
-    var body: some View {
-        if clock.session?.countdown != nil {
-            Image(systemName: "timer")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(clock.paused ? .white.opacity(0.45) : .officeOnDark)
-        } else if clock.paused {
-            Circle().strokeBorder(.white.opacity(0.45), lineWidth: 1.5).frame(width: 7, height: 7)
-        } else {
-            Circle().fill(Color.officeOnDark).frame(width: 7, height: 7)
-        }
-    }
-}
-
-/// Open: the project, the time, and the controls (or a nudge and its two answers).
+/// Open: the mark and project, the time, progress, and the controls (or a nudge and its answers).
 private struct Card: View {
-    let clock: Clock
+    let clock: Clock, p: Palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(clock.guessed && clock.nudge == nil ? 0.55 : 0.85))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("title")
+            HStack(spacing: 8) {
+                Mark(size: 18)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(clock.nudge == nil && (clock.guessed || clock.session == nil) ? p.soft : p.ink.opacity(0.88))
+                    .lineLimit(1)
+                    .accessibilityIdentifier("title")
+            }
             Text(clock.session == nil ? "0:00" : clock.display)
-                .font(.system(size: 34, weight: .light).monospacedDigit())
-                .foregroundStyle(.white.opacity(clock.session == nil || clock.paused ? 0.45 : 1))
+                .font(.system(size: 36, weight: .light).monospacedDigit())
+                .tracking(-0.5)
+                .foregroundStyle(clock.session == nil || clock.paused ? p.soft : p.ink)
                 .contentTransition(.numericText())
-                .padding(.top, 2)
+                .padding(.top, 6)
                 .accessibilityIdentifier("time")
+            // Toward the next nudge, or a countdown's end.
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(p.track)
+                    Capsule().fill(clock.running ? p.green : p.soft)
+                        .frame(width: max(3, g.size.width * (clock.session == nil ? 0 : clock.progress)))
+                }
+            }
+            .frame(height: 3)
+            .padding(.top, 8)
+            .animation(.linear(duration: 1), value: clock.progress)
             Group {
                 if clock.nudge != nil { answers } else { controls }
             }
-            .padding(.top, 12)
+            .padding(.top, 14)
         }
         .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 14)
-        .frame(width: 236, alignment: .leading)
-        .edgeBackground(14)
+        .frame(width: 244, alignment: .leading)
+        .edgeBackground(14, p, live: clock.running)
     }
 
     private var title: String {
@@ -218,47 +260,43 @@ private struct Card: View {
 
     private var answers: some View {
         HStack(spacing: 8) {
-            Button { clock.answer(true) } label: {
-                Text("Keep going").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(Pill(fill: .office))
-            .testFrame("Keep going")
-            Button { clock.answer(false) } label: {
-                Text("Stop").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(Pill(fill: .white.opacity(0.12)))
-            .testFrame("Stop")
+            Button { clock.answer(true) } label: { Text("Keep going").frame(maxWidth: .infinity) }
+                .buttonStyle(Pill(fill: p.green, ink: .white))
+                .testFrame("Keep going")
+            Button { clock.answer(false) } label: { Text("Stop").frame(maxWidth: .infinity) }
+                .buttonStyle(Pill(fill: p.track, ink: p.ink))
+                .testFrame("Stop")
         }
     }
 
-    /// Three places, one control each: the main action, stop, more.
+    /// Three places, one control each: the main action (always green), stop, more.
     private var controls: some View {
         HStack(spacing: 0) {
             if clock.session == nil {
-                Round(symbol: "play.fill", label: "Start", fill: .office) { clock.start() }
+                Round(symbol: "play.fill", label: "Start", fill: p.green, ink: .white) { clock.start() }
             } else if clock.paused {
-                Round(symbol: "play.fill", label: "Resume", fill: .office) { clock.resume() }
+                Round(symbol: "play.fill", label: "Resume", fill: p.green, ink: .white) { clock.resume() }
             } else {
-                Round(symbol: "pause.fill", label: "Pause", fill: .white.opacity(0.14)) { clock.pause() }
+                Round(symbol: "pause.fill", label: "Pause", fill: p.green, ink: .white) { clock.pause() }
             }
             Spacer()
             if clock.session != nil {
-                Round(symbol: "stop.fill", label: "Stop", fill: .white.opacity(0.14)) { clock.stop() }
+                Round(symbol: "stop.fill", label: "Stop", fill: p.track, ink: p.ink) { clock.stop() }
                 Spacer()
             }
-            More(clock: clock)
+            More(clock: clock, p: p)
         }
     }
 }
 
 private struct Round: View {
-    let symbol: String, label: String, fill: Color
+    let symbol: String, label: String, fill: Color, ink: Color
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(ink)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(fill))
                 .contentShape(Circle())
@@ -271,11 +309,11 @@ private struct Round: View {
 }
 
 private struct Pill: ButtonStyle {
-    let fill: Color
+    let fill: Color, ink: Color
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(ink)
             .frame(height: 30)
             .background(Capsule().fill(fill).opacity(configuration.isPressed ? 0.75 : 1))
             .contentShape(Capsule())
@@ -284,7 +322,7 @@ private struct Pill: ButtonStyle {
 
 /// Name, countdowns, settings: the same choices as the menu bar.
 private struct More: View {
-    let clock: Clock
+    let clock: Clock, p: Palette
     var body: some View {
         Menu {
             if clock.session != nil {
@@ -301,11 +339,12 @@ private struct More: View {
             Button("Hide Edge Clock") { Edge.shared.shown = false }
             Button("Settings...") { SettingsWindow.show() }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.8))
+            // Drawn, not a symbol: a menu label recolours symbols to white, unreadable on the light panel.
+            HStack(spacing: 3.5) {
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(p.ink.opacity(0.7)).frame(width: 4, height: 4) }
+            }
                 .frame(width: 34, height: 34)
-                .background(Circle().fill(.white.opacity(0.08)))
+                .background(Circle().fill(p.track))
                 .contentShape(Circle())
         }
         .menuStyle(.button)
@@ -316,6 +355,7 @@ private struct More: View {
         .testFrame("More")
     }
 }
+
 
 extension View {
     /// In the UI test, where a control sits in the panel (top-left points), so the test can click it.

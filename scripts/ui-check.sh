@@ -13,6 +13,7 @@ for mode in folder vault; do
   dir=$(mktemp -d)
   [[ $mode == vault ]] && mkdir -p "$dir/data/domains/time"
   echo "== $mode"
-  GLYPH_TIME_HOST=uitest-local "$app" --uitest "$out/$mode" -folder "$dir" || rc=1
+  look=dark; [[ $mode == vault ]] && look=light  # both appearances, one per run
+  GLYPH_TIME_HOST=uitest-local "$app" --uitest "$out/$mode" --appearance $look -folder "$dir" || rc=1
 done
 exit $rc

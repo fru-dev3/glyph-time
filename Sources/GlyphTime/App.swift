@@ -50,9 +50,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func update() {
         guard let button = item?.button else { return }
         let clock = Clock.shared
-        let image = NSImage(systemSymbolName: clock.session?.countdown != nil ? "timer" : clock.running ? "clock.fill" : "clock",
-                            accessibilityDescription: "Glyph Time")
+        // The runner, drawn for the menu bar (assets/MenuBar.png, @2x); a template, so it takes the bar's colour.
+        let image = NSImage(named: "MenuBar") ?? NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
         image?.isTemplate = true
+        image?.accessibilityDescription = "Glyph Time"
+        button.appearsDisabled = clock.paused
         button.image = image
         button.imagePosition = .imageLeading
         button.attributedTitle = NSAttributedString(string: clock.session == nil ? "" : " " + clock.display, attributes: [
@@ -87,6 +89,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
 
+        let head = NSMenuItem(title: "Glyph Time", action: nil, keyEquivalent: "")
+        head.isEnabled = false
+        let icon = NSApp.applicationIconImage.copy() as! NSImage
+        icon.size = NSSize(width: 18, height: 18)
+        head.image = icon
+        head.attributedTitle = NSAttributedString(string: "Glyph Time", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.labelColor])
+        menu.addItem(head)
+        menu.addItem(.separator())
         if let problem = Store.problem { note(problem) }
         if clock.session != nil {
             note("\(clock.display)  \(clock.project)")

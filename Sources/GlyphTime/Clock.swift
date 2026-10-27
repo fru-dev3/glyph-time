@@ -25,6 +25,14 @@ final class Clock {
         let left = Double(target) * minute - elapsed
         return left >= 0 ? TimeLog.clock(left) : "+" + TimeLog.clock(-left)
     }
+    /// 0 to 1: toward the next nudge, or toward a countdown's end.
+    var progress: Double {
+        guard session != nil else { return 0 }
+        if let t = session?.countdown { return min(1, elapsed / (Double(t) * minute)) }
+        guard nudgeMinutes > 0 else { return 0 }
+        let every = Double(nudgeMinutes) * minute
+        return elapsed.truncatingRemainder(dividingBy: every) / every
+    }
     var project: String { session?.project?.isEmpty == false ? session!.project! : "Unnamed" }
     var guessed: Bool { session?.source == "repo" || session?.source == "app" }
 

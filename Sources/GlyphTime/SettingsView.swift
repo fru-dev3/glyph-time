@@ -13,6 +13,19 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Glyph Time").font(.system(size: 20, weight: .semibold))
+                        Text("See where your hours go.").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+            Section {
                 Picker("Nudge every", selection: $nudge) {
                     Text("Never").tag(0)
                     ForEach([15, 30, 45, 60, 90], id: \.self) { Text("\($0) minutes").tag($0) }
@@ -64,7 +77,7 @@ struct SettingsView: View {
             }
             Section {
                 HStack {
-                    Text("Glyph Time \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                    Text("(c) fru.dev")
                     Spacer()
                     Link("glyph.fru.dev/time", destination: URL(string: "https://glyph.fru.dev/time")!)
                 }

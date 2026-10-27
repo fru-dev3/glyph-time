@@ -6,8 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION=0.1.1
-BUILD=2
+VERSION=0.1.2
+BUILD=3
 
 swift build -c release --product GlyphTime
 
@@ -16,6 +16,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/GlyphTime "$APP/Contents/MacOS/GlyphTime"
 [[ -f assets/AppIcon.icns ]] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp assets/MenuBar.png assets/MenuBar@2x.png "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

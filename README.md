@@ -97,6 +97,10 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.2** (2026-10-27): branded. The runner in the menu bar and at the top of the clock, office
+  green for the running state, the main control and a line filling toward the next nudge (a ring on
+  the small count), a green tab when idle, light and dark panels, the icon and name atop the menu
+  and Settings.
 - **0.1.1** (2026-10-27): the Glyph Time icon is now the runner: the family figure mid-stride
   with a stopwatch for a head, chosen for the family. Nothing else changed.
 - **0.1.0** (2026-10-27): first release. The edge clock, nudges, countdowns, idle, lock and
