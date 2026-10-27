@@ -97,6 +97,8 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.1** (2026-10-27): the Glyph Time icon is now the runner: the family figure mid-stride
+  with a stopwatch for a head, chosen for the family. Nothing else changed.
 - **0.1.0** (2026-10-27): first release. The edge clock, nudges, countdowns, idle, lock and
   sleep, projects guessed from the front repo, the menu bar with today's projects, sessions as
   plain files and a summary for Glyph Studio.
