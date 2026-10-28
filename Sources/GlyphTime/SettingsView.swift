@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(Clock.nudgeKey) private var nudge = 30
     @AppStorage(Clock.idleKey) private var idle = 5
     @AppStorage("folder") private var folder = ""
+    @AppStorage(Clock.autoHideKey) private var autoHide = false
     @State private var trusted = AXIsProcessTrusted()
     @State private var login = SMAppService.mainApp.status == .enabled
     @State private var dock = Presence.inDock
@@ -38,6 +39,26 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("Back within 30 minutes and the clock carries on. Longer, and the session ends when you left.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Hide projects untouched for 30 days", isOn: $autoHide)
+                    .tint(.office)
+                    .onChange(of: autoHide) { _, _ in Clock.shared.refreshToday() }
+                if !Clock.shared.hidden.isEmpty {
+                    LabeledContent("Hidden") {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            ForEach(Clock.shared.hidden, id: \.name) { p in
+                                HStack(spacing: 8) {
+                                    Text(p.name).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                                    Button("Show") { Clock.shared.unhide(p.name) }.controlSize(.small)
+                                }
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text("For the Recent list. Right-click a project on the clock, or hold Option in the menu, to hide it. Hidden projects keep their sessions and come back when you start them again.")
                     .foregroundStyle(.secondary)
             }
             Section {

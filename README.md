@@ -30,11 +30,17 @@ Apple silicon. It lives in the menu bar and on the right edge of the screen; the
 - **Away**: five minutes without a key or the pointer (Settings: 2 to 15, or never), the screen
   locked or the Mac asleep pause the clock, dated when you left. Back within 30 minutes, it carries
   on; longer, the session ends when you left. A pause you made yourself stays until you resume.
-- **Today**: the menu bar lists today's projects and their time, from every device.
+- **Today**: the menu bar lists today's projects and their time, from every device. Click one to
+  start again.
+- **Recent**: with nothing running, the open clock and the menu bar list your last five projects,
+  with today's and the total time. A click starts a new session on one, never reopens the old.
+  Right-click one on the clock (or hold Option in the menu) to hide it from Recent; it keeps its
+  sessions, is listed under Hidden (menu bar, Settings) and comes back when you start it again.
+  Hiding is a line in the session file, so every device agrees.
 
 ## Where sessions go
 
-One line per start, pause, resume, name, nudge and stop, appended to
+One line per start, pause, resume, name, nudge, stop, hide and show, appended to
 `<folder>/<YYYY-MM>.<device>.jsonl`. Each device writes only its own file, so a folder synced
 between Macs never conflicts; readers merge the files by time. The file is the timer: quit, crash
 or restart and the clock picks up where the lines say.
@@ -97,6 +103,10 @@ Accessibility needed for it), `CGEventSource` for idle time.
 
 ## Versions
 
+- **0.1.7** (2026-10-27): Recent projects. The open clock lists your last five projects under Start,
+  the menu bar too (plus All Projects and Hidden); a click starts a new session on one, and the
+  name prompt suggests every project as you type. Right-click (or Option in the menu) hides one;
+  Settings can hide projects untouched for 30 days.
 - **0.1.6** (2026-10-27): dragging the open clock no longer folds it mid-drag.
 - **0.1.5** (2026-10-27): put the clock anywhere on the screen: it stays exactly where you drop it,
   never under the menu bar or the Dock. Keep it open while a session runs, or minimize it to the icon
@@ -122,7 +132,8 @@ MIT. See [LICENSE](LICENSE).
 
 ## On the iPhone
 
-The Glyph iPhone app (1.18) has Time under More: the same lines, in its own
+Glyph Time for the iPhone is its own app (since 2026-10-27; it was a Time area in the Glyph
+iPhone app). It opens on the timer and writes the same lines, in its own
 `<YYYY-MM>.iphone-<model>.jsonl`, sent whole over your private network into the same sessions
 folder. This app merges every file there, so phone sessions show in Today and in the summary.
 Alarm and reminder lines are kept but not folded into sessions.

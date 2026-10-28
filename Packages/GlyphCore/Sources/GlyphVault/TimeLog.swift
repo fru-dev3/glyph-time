@@ -13,8 +13,12 @@ import Foundation
 ///
 /// Events: start (project, source, app, countdown), name (renames the open session), pause
 /// (reason: user, idle, sleep, lock), resume, stop (minutes, for people reading the file), nudge
-/// (minutes, answer: keep, stop, ignored, done), alarm and reminder (the phone: id, at, label;
-/// the same id again with answer "cancel" takes it back). Lines with other events are kept but not folded.
+/// (minutes, answer: keep, stop, ignored, done), hide and show (project: off and back on the
+/// Recent list), alarm and reminder (the phone: id, at, label;
+/// the same id again with answer "cancel" takes it back; the same id again with new fields is an
+/// edit, the last line wins). A repeating one carries days (1 Monday ... 7 Sunday) and its `at` is
+/// the next time it goes off when written; sound, snooze and on (false: switched off) are optional.
+/// Lines with other events are kept but not folded.
 ///
 ///     {"at":"2026-10-28T06:30:00-05:00","event":"alarm","host":"iphone-16-pro","id":"7F3A...","label":"Gym","ts":"2026-10-27T21:02:11-05:00"}
 public struct TimeEvent: Codable, Equatable, Sendable {
@@ -36,16 +40,35 @@ public struct TimeEvent: Codable, Equatable, Sendable {
     public var at: Date?
     public var label: String?
     public var id: String?
+    /// Repeats on these weekdays, 1 Monday ... 7 Sunday; none rings once.
+    public var days: [Int]?
+    /// The alert sound's name; none is the system's.
+    public var sound: String?
+    public var snooze: Bool?
+    /// False while switched off; none is on.
+    public var on: Bool?
 
     public init(_ event: String, at ts: Date = .now, host: String, device: String? = nil, project: String? = nil,
                 source: String? = nil, app: String? = nil, reason: String? = nil, minutes: Int? = nil,
                 countdown: Int? = nil, answer: String? = nil,
-                at: Date? = nil, label: String? = nil, id: String? = nil) {
+                at: Date? = nil, label: String? = nil, id: String? = nil,
+                days: [Int]? = nil, sound: String? = nil, snooze: Bool? = nil, on: Bool? = nil) {
         self.ts = ts; self.event = event; self.host = host; self.device = device; self.project = project
         self.source = source; self.app = app; self.reason = reason; self.minutes = minutes
         self.countdown = countdown; self.answer = answer
         self.at = at; self.label = label; self.id = id
+        self.days = days; self.sound = sound; self.snooze = snooze; self.on = on
     }
+}
+
+/// A project on the Recent list: when it last started, its time today and in all, hidden or not.
+public struct TimeProject: Equatable, Sendable {
+    public var name: String
+    public var last: Date
+    public var today: TimeInterval = 0
+    public var total: TimeInterval = 0
+    public var hidden = false
+    public init(name: String, last: Date) { self.name = name; self.last = last }
 }
 
 /// One stretch of work, folded from the lines.
@@ -149,9 +172,41 @@ public enum TimeLog {
     }
 
     /// This month and the one before: enough to find a session left open over a month's end.
-    public static func recentMonths(_ now: Date = .now) -> Set<String> {
-        let before = Calendar.current.date(byAdding: .month, value: -1, to: now) ?? now
-        return [month(now), month(before)]
+    public static func recentMonths(_ now: Date = .now, count: Int = 2) -> Set<String> {
+        Set((0..<max(1, count)).map { month(Calendar.current.date(byAdding: .month, value: -$0, to: now) ?? now) })
+    }
+
+    /// Every named project, most recently started first, with its time today and in all the
+    /// sessions given. Hiding is a line too: `{"event":"hide","project":"X"}` takes it off the
+    /// Recent list, `"show"` puts it back, and starting it again brings it back by itself. With
+    /// `autoHideDays`, a project not started (or shown) in that many days is hidden as well.
+    /// Hidden projects stay in the file and in every total; only the list leaves them out.
+    public static func projects(_ events: [TimeEvent], now: Date = .now, autoHideDays: Int? = nil) -> [TimeProject] {
+        let sessions = sessions(events)
+        let day = Calendar.current.startOfDay(for: now)
+        var list: [String: TimeProject] = [:]
+        for s in sessions {
+            guard let name = s.project?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { continue }
+            var p = list[name] ?? TimeProject(name: name, last: s.start)
+            p.last = max(p.last, s.start)
+            let secs = s.active(at: now)
+            p.total += secs
+            if s.start >= day { p.today += secs }
+            list[name] = p
+        }
+        var hid: [String: Date] = [:], shown: [String: Date] = [:]
+        for e in events {
+            guard let name = e.project else { continue }
+            if e.event == "hide" { hid[name] = max(hid[name] ?? .distantPast, e.ts) }
+            if e.event == "show" { shown[name] = max(shown[name] ?? .distantPast, e.ts) }
+        }
+        let cutoff = autoHideDays.map { now.addingTimeInterval(-Double($0) * 86_400) }
+        for (name, var p) in list {
+            let back = max(p.last, shown[name] ?? .distantPast)
+            p.hidden = (hid[name] ?? .distantPast) > back || (cutoff.map { back < $0 } ?? false)
+            list[name] = p
+        }
+        return list.values.sorted { $0.last > $1.last }
     }
 
     /// Folds events into sessions, each device on its own, oldest first. A start while a session

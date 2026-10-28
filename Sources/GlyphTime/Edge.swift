@@ -164,6 +164,7 @@ final class Edge {
     func hover(_ inside: Bool) {
         leaving?.cancel()
         if inside {
+            if !hovering { Clock.shared.refreshToday() } // another device may have added a project
             withAnimation(.smooth(duration: 0.22)) { hovering = true }
         } else {
             // A short grace, so passing over the edge doesn't make it flicker.
@@ -374,8 +375,10 @@ private struct Card: View {
         let pill = NSFont.systemFont(ofSize: 13, weight: .semibold)
         let answers = clock.nudge == nil ? 0 : width("Keep going", pill) + width("Stop", pill) + 4 * 16 + 8
         let keys: CGFloat = clock.session == nil ? 2 : 3 // primary, stop, More
-        return onGrid(max(time, header, answers, keys * 32 + (keys - 1) * 8))
+        return onGrid(max(time, header, answers, keys * 32 + (keys - 1) * 8, showsRecent ? Recent.columnWidth(clock.recent.prefix(5)) : 0))
     }
+
+    private var showsRecent: Bool { clock.session == nil && clock.nudge == nil && !clock.recent.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -414,6 +417,7 @@ private struct Card: View {
             }
             .frame(height: 32)
             .padding(.top, 16)
+            if showsRecent { Recent(clock: clock, p: p).padding(.top, 16) }
         }
         .frame(width: contentWidth, alignment: .leading)
         .padding(16)
@@ -446,6 +450,72 @@ private struct Card: View {
                 Key(symbol: "stop.fill", label: "Stop", ink: p.ink.opacity(0.6), weight: .regular) { clock.stop() }
             }
             More(clock: clock, p: p)
+        }
+    }
+}
+
+/// Nothing running: the last five projects under the controls. A click starts a new session on
+/// one (its own start, never the old session reopened); right-click hides it from the list.
+private struct Recent: View {
+    let clock: Clock, p: Palette
+    static let name = NSFont.systemFont(ofSize: 13, weight: .regular)
+    static let time = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+
+    /// The widest row, names held to 140pt (longer ones are cut).
+    static func columnWidth(_ list: ArraySlice<TimeProject>) -> CGFloat {
+        list.map { 12 + 8 + min(width($0.name, name), 140) + 16 + width(StatusMenu.times($0), time) }.max() ?? 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(p.hairline).frame(height: 0.5)
+            Text("Recent")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(p.soft)
+                .frame(height: 16)
+                .padding(.top, 12)
+            VStack(spacing: 0) {
+                ForEach(clock.recent.prefix(5), id: \.name) { Row(project: $0, clock: clock, p: p) }
+            }
+            .padding(.top, 4)
+            .padding(.bottom, -6) // the last row's own air, so the card ends 16pt under its ink
+        }
+    }
+
+    private struct Row: View {
+        let project: TimeProject, clock: Clock, p: Palette
+        @State private var over = false
+        var body: some View {
+            Button { clock.start(project: project.name) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(over ? p.green : p.soft)
+                        .frame(width: 12)
+                    Text(project.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(p.ink.opacity(0.88))
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 16)
+                    Text(StatusMenu.times(project))
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(p.soft)
+                }
+                .frame(height: 28)
+                .padding(.horizontal, 8)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(over ? p.track : .clear))
+                .padding(.horizontal, -8) // the hover wash reaches past the column; the ink stays on it
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { over = $0 }
+            .contextMenu {
+                Button("Start Again") { clock.start(project: project.name) }
+                Button("Hide from Recent") { clock.hide(project.name) }
+            }
+            .help("Start a new session on \(project.name): \(TimeLog.span(project.today)) today, \(TimeLog.span(project.total)) in all")
+            .accessibilityLabel("Start \(project.name)")
+            .testFrame("recent:\(project.name)")
         }
     }
 }

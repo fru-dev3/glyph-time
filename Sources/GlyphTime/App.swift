@@ -164,16 +164,47 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         down.submenu = sub
         menu.addItem(down)
 
+        // Recent: a click starts a new session on that project; hold Option to hide it instead.
+        if !clock.projects.isEmpty {
+            menu.addItem(.separator())
+            note("Recent")
+            for p in clock.recent.prefix(5) {
+                let start = item(p.name) { clock.start(project: p.name) }
+                start.attributedTitle = row(p.name, Self.times(p), ink: .labelColor)
+                start.toolTip = "Start a new session on \(p.name)"
+                menu.addItem(start)
+                let hide = item("Hide \(p.name.prefix(28)) from Recent") { clock.hide(p.name) }
+                hide.keyEquivalentModifierMask = [.option]
+                hide.isAlternate = true
+                menu.addItem(hide)
+            }
+            add("All Projects...") { Ask.start() }
+            if !clock.hidden.isEmpty {
+                let hidden = NSMenuItem(title: "Hidden", action: nil, keyEquivalent: "")
+                let list = NSMenu()
+                let head = NSMenuItem(title: "Choose one to put back on Recent", action: nil, keyEquivalent: "")
+                head.isEnabled = false
+                list.addItem(head)
+                for p in clock.hidden { list.addItem(item(p.name) { clock.unhide(p.name) }) }
+                hidden.submenu = list
+                menu.addItem(hidden)
+            }
+        }
+
         menu.addItem(.separator())
         if clock.today.isEmpty {
             note("Nothing timed today")
         } else {
             note("Today")
             for t in clock.today.prefix(8) {
-                let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-                item.isEnabled = false
-                item.attributedTitle = row(t.project, TimeLog.span(t.seconds))
-                menu.addItem(item)
+                // A past session: click to start again (a new session, never the old one reopened).
+                let named = t.project != "Unnamed"
+                let i = item("") { clock.start(project: t.project) }
+                i.isEnabled = named
+                if !named { i.action = nil }
+                i.attributedTitle = row(t.project, TimeLog.span(t.seconds))
+                if named { i.toolTip = "Start again" }
+                menu.addItem(i)
             }
         }
 
@@ -191,14 +222,26 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         add("Quit Glyph Time", "q", [.command]) { NSApp.terminate(nil) }
     }
 
-    /// "acme-api ........ 1 h 12 min": the time on a right tab stop.
-    private func row(_ name: String, _ value: String) -> NSAttributedString {
+    private func item(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: #selector(run(_:)), keyEquivalent: "")
+        i.target = self
+        i.representedObject = action as AnyObject
+        return i
+    }
+
+    /// "35 min today · 6 h", or the total alone when nothing today.
+    static func times(_ p: TimeProject) -> String {
+        p.today >= 60 ? "\(TimeLog.span(p.today)) today · \(TimeLog.span(p.total))" : TimeLog.span(p.total)
+    }
+
+    /// "acme-api ........ 1 h 12 min": the name, then the time on a right tab stop in grey.
+    private func row(_ name: String, _ value: String, ink: NSColor = .secondaryLabelColor) -> NSAttributedString {
         let p = NSMutableParagraphStyle()
-        p.tabStops = [NSTextTab(textAlignment: .right, location: 220)]
-        return NSAttributedString(string: "\(name.prefix(28))\t\(value)", attributes: [
-            .paragraphStyle: p, .font: NSFont.menuFont(ofSize: 0),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ])
+        p.tabStops = [NSTextTab(textAlignment: .right, location: 260)]
+        let font = NSFont.menuFont(ofSize: 0)
+        let s = NSMutableAttributedString(string: "\(name.prefix(28))\t", attributes: [.paragraphStyle: p, .font: font, .foregroundColor: ink])
+        s.append(NSAttributedString(string: value, attributes: [.paragraphStyle: p, .font: font, .foregroundColor: NSColor.secondaryLabelColor]))
+        return s
     }
 
     @objc private func run(_ sender: NSMenuItem) { (sender.representedObject as? () -> Void)?() }
@@ -218,7 +261,7 @@ enum Ask {
         Clock.shared.start(project: clean.isEmpty ? nil : clean)
     }
 
-    /// Recent names to pick from: today's projects first.
+    /// Every project to pick from, typed ahead as you write.
     private static func ask(_ title: String, button: String, value: String) -> String? {
         let before = NSWorkspace.shared.frontmostApplication
         defer { if let before, before.bundleIdentifier != Bundle.main.bundleIdentifier { before.activate() } }
@@ -228,7 +271,10 @@ enum Ask {
         alert.addButton(withTitle: button)
         alert.addButton(withTitle: "Cancel")
         let field = NSComboBox(frame: NSRect(x: 0, y: 0, width: 260, height: 26))
-        field.addItems(withObjectValues: Clock.shared.today.map(\.project).filter { $0 != "Unnamed" })
+        // Type-ahead over every project: the Recent ones first, then the hidden ones.
+        Clock.shared.refreshToday()
+        field.addItems(withObjectValues: (Clock.shared.recent + Clock.shared.hidden).map(\.name))
+        field.numberOfVisibleItems = 10
         field.stringValue = value
         field.completes = true
         alert.accessoryView = field

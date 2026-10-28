@@ -15,6 +15,10 @@ final class Clock {
     private(set) var nudge: String?
     /// Today's sessions on every device, for the menu.
     private(set) var today: [(project: String, seconds: TimeInterval)] = []
+    /// Every named project, most recently started first, from every month on disk, hidden ones flagged.
+    private(set) var projects: [TimeProject] = []
+    var recent: [TimeProject] { projects.filter { !$0.hidden } }
+    var hidden: [TimeProject] { projects.filter(\.hidden) }
 
     var running: Bool { session != nil && session?.pausedSince == nil }
     var paused: Bool { session?.pausedSince != nil }
@@ -44,7 +48,7 @@ final class Clock {
     private var countdownDone = false
     private var nudgeTask: Task<Void, Never>?
 
-    static let idleKey = "idleMinutes", nudgeKey = "nudgeMinutes"
+    static let idleKey = "idleMinutes", nudgeKey = "nudgeMinutes", autoHideKey = "autoHideProjects"
     var nudgeMinutes: Int { UserDefaults.standard.object(forKey: Self.nudgeKey) as? Int ?? 30 }
     var idleMinutes: Int { UserDefaults.standard.object(forKey: Self.idleKey) as? Int ?? 5 }
     /// Away longer than this and an idle pause ends the session where you left instead of resuming.
@@ -103,6 +107,10 @@ final class Clock {
         write(TimeEvent("name", host: Store.host, project: String(clean.prefix(80)), source: "named"))
     }
 
+    /// Off the Recent list, or back on it: a line, so every device agrees. History keeps it either way.
+    func hide(_ name: String) { write(TimeEvent("hide", host: Store.host, project: name)) }
+    func unhide(_ name: String) { write(TimeEvent("show", host: Store.host, project: name)) }
+
     func answer(_ keep: Bool) {
         nudgeTask?.cancel()
         let minutes = Int(elapsed / 60)
@@ -126,6 +134,8 @@ final class Clock {
     func refreshToday() {
         let start = Calendar.current.startOfDay(for: .now)
         today = TimeLog.totals(TimeLog.sessions(Store.recent()), from: start, to: start.addingTimeInterval(86_400))
+        let auto = UserDefaults.standard.bool(forKey: Self.autoHideKey)
+        projects = TimeLog.projects(Store.all(), autoHideDays: auto ? 30 : nil)
     }
 
     // MARK: The tick: display, nudges, idle

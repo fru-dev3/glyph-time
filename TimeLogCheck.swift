@@ -78,4 +78,22 @@ let rl = TimeLog.line(marks[0])
 assert(TimeLog.events(in: rl) == [marks[0]] && String(decoding: rl, as: UTF8.self).contains("\"label\":\"Gym\""))
 assert(TimeLog.reminders(marks.shuffled()).map(\.label) == ["Call Sam", "Gym"])
 assert(TimeLog.sessions(marks + day).count == 2)
+// Recent projects: newest first, hide and show are lines, starting again un-hides, auto-hide by age.
+let hp = "laptop-local"
+let pl: [TimeEvent] = [
+    TimeEvent("start", at: at(0), host: hp, project: "Old"), TimeEvent("stop", at: at(60), host: hp),
+    TimeEvent("start", at: at(100), host: hp, project: "Acme"), TimeEvent("stop", at: at(160), host: hp),
+    TimeEvent("hide", at: at(170), host: hp, project: "Acme"),
+    TimeEvent("start", at: at(200), host: hp, project: "Beta"), TimeEvent("stop", at: at(230), host: hp),
+]
+var ps = TimeLog.projects(pl, now: at(240))
+assert(ps.map(\.name) == ["Beta", "Acme", "Old"] && ps.map(\.hidden) == [false, true, false], "\(ps)")
+assert(ps[1].total == 60 * 60)
+ps = TimeLog.projects(pl + [TimeEvent("start", at: at(250), host: hp, project: "Acme")], now: at(260))
+assert(ps.first?.name == "Acme" && ps.first?.hidden == false, "starting again un-hides")
+ps = TimeLog.projects(pl + [TimeEvent("show", at: at(180), host: hp, project: "Acme")], now: at(240))
+assert(ps.first(where: { $0.name == "Acme" })?.hidden == false, "show restores")
+ps = TimeLog.projects(pl, now: at(240).addingTimeInterval(40 * 86_400), autoHideDays: 30)
+assert(ps.allSatisfy(\.hidden), "auto-hide after 30 days")
+assert(TimeLog.recentMonths(count: 12).count == 12)
 print("TimeLog ok")

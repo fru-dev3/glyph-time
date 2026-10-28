@@ -49,6 +49,13 @@ enum Store {
 
     static func recent() -> [TimeEvent] { TimeLog.read(folder, months: TimeLog.recentMonths()) }
 
+    /// Every month on disk, for the projects list and its totals.
+    // ponytail: reads every file on each refresh; keep a running fold if years of files make it slow.
+    static func all() -> [TimeEvent] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return TimeLog.read(folder, months: Set(names.filter { $0.first?.isNumber == true }.map { String($0.prefix(7)) }))
+    }
+
     /// In a Glyph Studio vault with a time domain: the hours by project for today, this week and
     /// last week, every device, at `data/domains/time/source/apps/time/summary.md`, where Studio
     /// reads a domain's sources. Written only when it changed.

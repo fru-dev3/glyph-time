@@ -224,6 +224,51 @@ enum UITest {
         minute = nil
         await shot("12-tab-again")
 
+        print("Recent projects")
+        let yesterday = Date.now.addingTimeInterval(-86_400)
+        try? TimeLog.append(TimeEvent("start", at: yesterday, host: Store.host, project: "northwind", source: "named"), to: Store.folder)
+        try? TimeLog.append(TimeEvent("stop", at: yesterday.addingTimeInterval(5400), host: Store.host, minutes: 90), to: Store.folder)
+        try? TimeLog.append(TimeEvent("start", at: yesterday.addingTimeInterval(-3600), host: "phone-test", project: "a-much-longer-project-name-for-the-list", source: "named"), to: Store.folder)
+        try? TimeLog.append(TimeEvent("stop", at: yesterday.addingTimeInterval(-1800), host: "phone-test"), to: Store.folder)
+        await open(true)
+        check(clock.recent.map(\.name).prefix(2) == ["acme-api", "northwind"], "Recent lists projects newest first, every device (\(clock.recent.map(\.name)))")
+        check(find("recent:acme-api") != nil && find("recent:northwind") != nil, "the open card lists them under Start")
+        await shot("16-open-recent")
+        let lineCount = lines.count
+        await press("recent:northwind")
+        check(clock.running && clock.project == "northwind" && last?.event == "start" && last?.project == "northwind" && lines.count == lineCount + 1, "a click starts a new session on it: a fresh start line")
+        check(clock.elapsed < 5, "with its own start, not yesterday's (\(clock.display))")
+        check(find("recent:acme-api") == nil, "running, the list steps aside")
+        clock.stop()
+        await wait(1.1) // lines are stamped to the second; a hide must come after the start it overrides
+        clock.hide("northwind")
+        check(last?.event == "hide" && last?.project == "northwind" && !clock.recent.contains { $0.name == "northwind" } && clock.hidden.map(\.name) == ["northwind"], "Hide writes a hide line and takes it off Recent")
+        check(TimeLog.sessions(lines).contains { $0.project == "northwind" }, "its sessions stay in the file")
+        let rm = NSMenu()
+        StatusMenu.shared.menuNeedsUpdate(rm)
+        check(rm.items.contains { $0.title == "All Projects..." } && rm.items.contains { $0.title == "Hidden" && $0.submenu?.items.contains { $0.title == "northwind" } == true }, "the menu has All Projects and Hidden, with northwind")
+        check(rm.items.contains { $0.attributedTitle?.string.hasPrefix("acme-api\t") == true && $0.isEnabled && !$0.isAlternate }, "the menu's Recent starts acme-api")
+        check(rm.items.contains { $0.isAlternate && $0.title.hasPrefix("Hide acme-api") }, "Option shows Hide on each Recent row")
+        await shot("17-open-hidden")
+        clock.start(project: "northwind")
+        check(clock.recent.first?.name == "northwind" && clock.hidden.isEmpty, "starting a hidden project brings it back")
+        clock.stop()
+        clock.hide("acme-api")
+        await wait(1.1)
+        clock.unhide("acme-api")
+        check(last?.event == "show" && clock.recent.contains { $0.name == "acme-api" }, "Show puts it back")
+        let hadAutoHide = UserDefaults.standard.object(forKey: Clock.autoHideKey) // the real setting, put back below
+        UserDefaults.standard.set(true, forKey: Clock.autoHideKey)
+        try? TimeLog.append(TimeEvent("start", at: .now.addingTimeInterval(-40 * 86_400), host: "phone-test", project: "old-client", source: "named"), to: Store.folder)
+        try? TimeLog.append(TimeEvent("stop", at: .now.addingTimeInterval(-40 * 86_400 + 600), host: "phone-test"), to: Store.folder)
+        clock.refreshToday()
+        check(clock.hidden.map(\.name) == ["old-client"], "auto-hide takes projects untouched for 30 days off Recent")
+        UserDefaults.standard.set(false, forKey: Clock.autoHideKey)
+        clock.refreshToday()
+        check(clock.recent.contains { $0.name == "old-client" }, "and off, they are back")
+        UserDefaults.standard.set(hadAutoHide, forKey: Clock.autoHideKey)
+        await open(false)
+
         print("Moving it")
         let panel = edge.panel!
         let start = panel.frame
@@ -359,6 +404,7 @@ enum UITest {
         check(!edge.panel.isVisible, "Hide takes the clock off the edge")
         edge.shown = true
         check(edge.panel.isVisible, "Show puts it back")
+        clock.hide("beta")
         SettingsWindow.show()
         await wait(1)
         if let w = SettingsWindow.current, let v = w.contentView?.superview, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
