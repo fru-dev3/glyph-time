@@ -13,6 +13,8 @@ enum UITest {
     /// Someone is at the Mac unless a step says otherwise (the test Mac itself sits idle).
     static var idle: Double? = on ? 0 : nil
     static var nudgeSeconds: Double?
+    /// What is in front, made up, for the activity check (nil: read the real screen).
+    static var front: Front?
 
     static var out = URL(fileURLWithPath: NSTemporaryDirectory())
     static var failures = 0
@@ -23,6 +25,12 @@ enum UITest {
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         if let a = CommandLine.arguments.firstIndex(of: "--appearance"), a + 1 < CommandLine.arguments.count {
             NSApp.appearance = NSAppearance(named: CommandLine.arguments[a + 1] == "dark" ? .darkAqua : .aqua)
+        }
+        // A watchdog: a check that hangs (a modal, a prompt) fails fast instead of holding the shared screen.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 600) {
+            print("UI WATCHDOG: no finish in 10 minutes, giving up")
+            fflush(stdout)
+            exit(2)
         }
         Task {
             try? await Task.sleep(for: .seconds(1))
@@ -50,8 +58,37 @@ enum UITest {
         return ok()
     }
 
+    /// History's controls, reported by the shared views (`historyID`).
+    static var historyFrames: [String: CGRect] = [:]
+
     static var lines: [TimeEvent] { TimeLog.read(Store.folder, months: TimeLog.recentMonths()).filter { $0.host == Store.host } }
     static var last: TimeEvent? { lines.last }
+
+    /// Typing, the way the window server would: key events to the panel, which is key only because
+    /// a field asked for it. `press` sends the mouse; this sends the keyboard.
+    static func typeKeys(_ text: String) async {
+        guard let panel = Edge.shared.panel else { return }
+        for ch in text.map(String.init) {
+            for kind in [NSEvent.EventType.keyDown, .keyUp] {
+                if let e = NSEvent.keyEvent(with: kind, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: panel.windowNumber, context: nil, characters: ch,
+                                            charactersIgnoringModifiers: ch, isARepeat: false, keyCode: 0) { panel.sendEvent(e) }
+            }
+            await wait(0.02)
+        }
+        await wait(0.2)
+    }
+
+    /// Return, which is what keeps a name.
+    static func enter() async {
+        guard let panel = Edge.shared.panel else { return }
+        for kind in [NSEvent.EventType.keyDown, .keyUp] {
+            if let e = NSEvent.keyEvent(with: kind, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: panel.windowNumber, context: nil, characters: "\r",
+                                        charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) { panel.sendEvent(e) }
+        }
+        await wait(0.4)
+    }
 
     // MARK: Finding and clicking
 
@@ -70,7 +107,7 @@ enum UITest {
     static func press(_ text: String) async -> Bool {
         // A card sliding in reports its frames as it moves: wait until the control holds still.
         var last: CGRect?
-        for _ in 0..<30 {
+        for _ in 0..<100 { // up to 5 s: a loaded Mac redraws late
             let now = find(text)
             if now != nil, now == last { break }
             last = now
@@ -182,8 +219,24 @@ enum UITest {
         await wait(0.4)
 
         print("Naming")
-        clock.rename("acme-api")
-        check(clock.project == "acme-api" && last?.event == "name" && !clock.guessed, "a name replaces the guess and is written")
+        // On the name itself, in the card: nothing comes forward to answer (Fru, 2026-11-07).
+        await open(true)
+        let openWindows = NSApp.windows.filter(\.isVisible).count
+        let wasInFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        await press("title")
+        check(find("title-field") != nil, "a click on the name turns it into a field, in the card")
+        check(NSApp.windows.filter(\.isVisible).count == openWindows, "and brings nothing forward to answer")
+        await typeKeys("acme-api")
+        await enter()
+        check(clock.project == "acme-api" && last?.event == "name" && !clock.guessed, "typed there and kept with Return, the name replaces the guess and is written")
+        // Asked of the behaviour, not of a leftover frame: a view that has gone leaves its last
+        // frame behind in the test's own table, so "the field is not there" cannot be read from it.
+        await typeKeys("zzz")
+        check(clock.project == "acme-api", "the field is a name again once it is kept: typing after Return changes nothing")
+        // Typing needs the keyboard, so naming does take the front. What matters is that it gives it
+        // straight back: the window this replaced did not.
+        check(await until(4) { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == wasInFront },
+              "and what you were in is in front again (\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-"))")
         await open(true)
         await shot("07-open-named")
         await open(false)
@@ -313,8 +366,9 @@ enum UITest {
             check(edge.hovering && edge.panel.isVisible, "a Dock click opens the card")
             _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
             await wait(0.6)
-            check(SettingsWindow.current?.isVisible == true, "a second Dock click opens Settings")
-            SettingsWindow.current?.close()
+            check(HistoryWindow.window?.isVisible == true, "a second Dock click opens History")
+            HistoryWindow.window?.close()
+            check(app.applicationDockMenu(NSApp)?.items.map(\.title) == ["History", "Settings..."], "the Dock menu has History and Settings")
         } else {
             check(false, "the app delegate answers Dock clicks")
         }
@@ -325,7 +379,7 @@ enum UITest {
         let menu = NSMenu()
         StatusMenu.shared.menuNeedsUpdate(menu)
         let titles = menu.items.map(\.title)
-        for t in ["Start", "Start Named...", "Count Down", "Today", "Show Clock on the Edge", "Open Sessions Folder", "Settings...", "Quit Glyph Time"] {
+        for t in ["Start", "Start Named...", "Count Down", "Today", "Show Clock on the Edge", "History...", "Open Sessions Folder", "Settings...", "Quit Glyph Time"] {
             check(titles.contains(t), "the menu has \(t)")
         }
         check(menu.items.contains { $0.attributedTitle?.string.hasPrefix("acme-api\t") == true }, "Today lists acme-api with its time")
@@ -386,6 +440,50 @@ enum UITest {
         await open(false)
         check(clock.session == nil, "Stop on the edge stops")
 
+        print("Starting itself when work starts")
+        // Nothing running and hands on the keyboard: the hours reach the report without remembering
+        // to press Start (Fru, 2026-11-07). Held back only by stopping it by hand, and only for a while.
+        freshFile()
+        Watch.startAfter = 0.2
+        Clock.autoStartPause = 1
+        idle = 0
+        // Driven rather than waited for: the clock asks Watch every five seconds, so a wait window
+        // can see one tick where two are needed (the first marks work started, the second opens the
+        // session). Calling it directly tests the rule, not the tick.
+        Watch.checkIdle()
+        await wait(0.4)
+        Watch.checkIdle()
+        check(clock.running, "a minute at the keyboard with nothing running starts a session")
+        check(clock.guessed && !(clock.project.isEmpty), "on what is in front, by the same guess Start makes (\(clock.project))")
+        check(last?.event == "start" && ["repo", "app"].contains(last?.source ?? ""), "and it is one ordinary start line")
+        let startedItself = clock.session?.project // the session's own name, which may be none at all
+        clock.stop() // by hand, which is what holds the auto-start back; the edge card is not open here
+        check(clock.session == nil && clock.stoppedProject == startedItself, "Stop by hand is remembered (\(clock.stoppedProject ?? "none"))")
+        idle = 0
+        Watch.checkIdle()
+        await wait(0.4)
+        Watch.checkIdle()
+        check(clock.session == nil, "and working on does not start the same thing again at once")
+        await wait(1.2) // past the hold, which this check set to a second
+        Watch.checkIdle()
+        await wait(0.4)
+        Watch.checkIdle()
+        check(clock.running, "once the quarter of an hour is up, work starts it again")
+        clock.stop()
+        UserDefaults.standard.set(false, forKey: Clock.autoStartKey)
+        freshFile()
+        idle = 0
+        Watch.checkIdle()
+        await wait(0.4)
+        Watch.checkIdle()
+        check(clock.session == nil, "turned off in Settings, nothing starts itself")
+        UserDefaults.standard.removeObject(forKey: Clock.autoStartKey)
+        if clock.session != nil { clock.stop() } // leave nothing running for the sections after this
+        freshFile()
+        Watch.startAfter = 60
+        Clock.autoStartPause = 15 * 60
+        idle = 0 // as the sections before and after expect: a session that is loaded must not idle-pause
+
         print("The file is the timer")
         freshFile()
         let t = Date.now.addingTimeInterval(-13) // as if the app had quit 13 seconds after a start
@@ -431,5 +529,8 @@ enum UITest {
             let summary = (try? String(contentsOf: vault.appending(path: "data/domains/time/source/apps/time/summary.md"), encoding: .utf8)) ?? ""
             check(summary.hasPrefix("# Glyph Time") && summary.contains("## Today") && summary.contains("- acme-api: 20 min (1 session)") && summary.contains("- Test Phone: 20 min"), "the time domain's summary has every device's sessions")
         }
+        await activityRun()
+        await historyRun()
+        await voiceRun()
     }
 }

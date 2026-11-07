@@ -16,10 +16,10 @@ enum Watch {
         }
         let dnc = DistributedNotificationCenter.default()
         dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { Clock.shared.pause(reason: "lock") }
+            MainActor.assumeIsolated { Clock.shared.pause(reason: "lock"); Activity.locked = true; Activity.sample() }
         }
         dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { back() }
+            MainActor.assumeIsolated { Activity.locked = false; back() }
         }
     }
 
@@ -33,12 +33,38 @@ enum Watch {
     static func checkIdle() {
         let clock = Clock.shared
         let idle = idle
+        if clock.running { workingSince = nil } // the minute is counted from work with nothing running
         if clock.running, clock.idleMinutes > 0, idle >= Double(clock.idleMinutes * 60) {
             // Dated when you left, but never before the last line written (the start or a resume).
             clock.pause(reason: "idle", at: max(Date.now.addingTimeInterval(-idle), clock.lastLine))
         } else if clock.paused, idle < 5 {
             back()
+        } else if clock.session == nil {
+            checkWorkStarted(idle: idle)
         }
+    }
+
+    /// How long at the keyboard before the clock starts itself. Long enough that passing through a
+    /// Mac to check something does not open a session; short enough that real work is not lost.
+    static var startAfter: TimeInterval = 60
+    static var workingSince: Date?
+
+    /// Nothing running and work has started: the clock starts itself on the same guess Start would
+    /// make, so the hours reach the report without remembering to press anything. The name is the
+    /// guess, shown grey, and a click on it puts the right name on.
+    private static func checkWorkStarted(idle: TimeInterval) {
+        let clock = Clock.shared
+        guard clock.autoStart, idle < 5 else { workingSince = nil; return }
+        let since = workingSince ?? .now
+        workingSince = since
+        guard Date.now.timeIntervalSince(since) >= startAfter else { return }
+        // Stopped by hand means stopped: the same work does not start itself again straight away,
+        // though something else in front does, because that is different work.
+        let guess = Guess.front()
+        if let stopped = clock.stoppedProject, stopped == guess.project, let at = clock.stoppedAt,
+           Date.now.timeIntervalSince(at) < Clock.autoStartPause { return }
+        workingSince = nil
+        clock.start()
     }
 
     /// Input again after an automatic pause.
@@ -48,7 +74,7 @@ enum Watch {
         if Date.now.timeIntervalSince(since) < clock.awayLimit {
             clock.resume()
         } else {
-            clock.stop(at: since)
+            clock.stop(at: since, byHand: false) // the clock closed it, not you
         }
     }
 }

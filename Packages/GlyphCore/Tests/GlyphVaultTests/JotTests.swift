@@ -5,14 +5,14 @@ import Testing
 /// Jotting while recording: what you said while holding the talk key stays out of the transcript.
 @Test func jotsLeaveTheTranscript() {
     let t = Transcript(language: "en-US", model: "test", segments: [
-        .init(start: 0, end: 4.8, text: "Sam wants the renewal signed by Friday."),
+        .init(start: 0, end: 4.8, text: "Ken wants the renewal signed by Friday."),
         .init(start: 5.1, end: 8.9, text: "Remind me to book the dentist."),   // jotted
         .init(start: 9.2, end: 14, text: "We hold the price for two years."),
         .init(start: 14, end: 20, text: "Pricing for the new seats, then the timeline."), // 1.3 s jotted at its end
     ])
     let jots = [Jot(start: 5.0, end: 9.0, kind: "dictate"), Jot(start: 19.1, end: 21, kind: "thought", note: "n.md")]
     let kept = t.excluding(jots).segments.map(\.text)
-    #expect(kept == ["Sam wants the renewal signed by Friday.", "We hold the price for two years."])
+    #expect(kept == ["Ken wants the renewal signed by Friday.", "We hold the price for two years."])
     #expect(t.excluding([]).segments.count == 4)
     // A brush at the edge (under a second and under half) keeps the sentence.
     #expect(t.excluding([Jot(start: 14.3, end: 14.5, kind: "dictate")]).segments.count == 4)

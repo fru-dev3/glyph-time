@@ -18,7 +18,14 @@ import Foundation
 /// the same id again with answer "cancel" takes it back; the same id again with new fields is an
 /// edit, the last line wins). A repeating one carries days (1 Monday ... 7 Sunday) and its `at` is
 /// the next time it goes off when written; sound, snooze and on (false: switched off) are optional.
-/// Lines with other events are kept but not folded.
+/// Any other repeat is a `rule` ("d2" every other day, "h2" every 2 hours, "m1.1" the first Monday
+/// of each month, "m-1.5" the last Friday); `end` is the last moment it may go off and `start` the
+/// day it was said to begin ("until Nov 27", "starting next Monday").
+/// Fixing the record is a line too, never a rewrite: edit (id, and any of project, start, end)
+/// changes one session, delete takes it out, undelete brings it back; any device may write them,
+/// naming the session by its `id`. rename (project: the old name, label: the new one) renames a
+/// whole project, every session of it, on every device. Lines with other events are kept but not
+/// folded.
 ///
 ///     {"at":"2026-10-28T06:30:00-05:00","event":"alarm","host":"iphone-16-pro","id":"7F3A...","label":"Gym","ts":"2026-10-27T21:02:11-05:00"}
 public struct TimeEvent: Codable, Equatable, Sendable {
@@ -47,17 +54,25 @@ public struct TimeEvent: Codable, Equatable, Sendable {
     public var snooze: Bool?
     /// False while switched off; none is on.
     public var on: Bool?
+    /// An edit's new start and end for the session named by `id`; an alarm's or reminder's first
+    /// day and last moment.
+    public var start: Date?
+    public var end: Date?
+    /// An alarm's or reminder's repeat other than weekly `days`: "d2", "h2", "m1.1".
+    public var rule: String?
 
     public init(_ event: String, at ts: Date = .now, host: String, device: String? = nil, project: String? = nil,
                 source: String? = nil, app: String? = nil, reason: String? = nil, minutes: Int? = nil,
                 countdown: Int? = nil, answer: String? = nil,
                 at: Date? = nil, label: String? = nil, id: String? = nil,
-                days: [Int]? = nil, sound: String? = nil, snooze: Bool? = nil, on: Bool? = nil) {
+                days: [Int]? = nil, sound: String? = nil, snooze: Bool? = nil, on: Bool? = nil,
+                start: Date? = nil, end: Date? = nil, rule: String? = nil) {
         self.ts = ts; self.event = event; self.host = host; self.device = device; self.project = project
         self.source = source; self.app = app; self.reason = reason; self.minutes = minutes
         self.countdown = countdown; self.answer = answer
         self.at = at; self.label = label; self.id = id
         self.days = days; self.sound = sound; self.snooze = snooze; self.on = on
+        self.start = start; self.end = end; self.rule = rule
     }
 }
 
@@ -72,7 +87,10 @@ public struct TimeProject: Equatable, Sendable {
 }
 
 /// One stretch of work, folded from the lines.
-public struct TimeSession: Equatable, Sendable {
+public struct TimeSession: Equatable, Sendable, Identifiable {
+    /// "laptop-local 2026-10-27T09:12:04-05:00": its device and first start, kept through edits,
+    /// so an edit line can name it.
+    public var id: String = ""
     public var host: String
     public var device: String?
     public var project: String?
@@ -194,16 +212,27 @@ public enum TimeLog {
             if s.start >= day { p.today += secs }
             list[name] = p
         }
-        var hid: [String: Date] = [:], shown: [String: Date] = [:]
-        for e in events {
-            guard let name = e.project else { continue }
-            if e.event == "hide" { hid[name] = max(hid[name] ?? .distantPast, e.ts) }
-            if e.event == "show" { shown[name] = max(shown[name] ?? .distantPast, e.ts) }
+        // Hidden when its last start, show or hide is a hide. Taken in line order (time, then place
+        // in the file), since lines are stamped to the second: a hide in the second a session
+        // started still hides it.
+        var hiddenNow: [String: Bool] = [:], shown: [String: Date] = [:]
+        for e in events.enumerated().sorted(by: { ($0.element.ts, $0.offset) < ($1.element.ts, $1.offset) }).map(\.element) {
+            guard let name = e.project?.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
+            switch e.event {
+            case "hide": hiddenNow[name] = true
+            case "show": hiddenNow[name] = false; shown[name] = max(shown[name] ?? .distantPast, e.ts)
+            case "start", "name": hiddenNow[name] = false
+            case "rename":
+                guard let to = e.label?.trimmingCharacters(in: .whitespacesAndNewlines), !to.isEmpty else { break }
+                hiddenNow[to] = hiddenNow.removeValue(forKey: name) ?? hiddenNow[to]
+                if let was = shown.removeValue(forKey: name) { shown[to] = max(shown[to] ?? .distantPast, was) }
+            default: break
+            }
         }
         let cutoff = autoHideDays.map { now.addingTimeInterval(-Double($0) * 86_400) }
         for (name, var p) in list {
             let back = max(p.last, shown[name] ?? .distantPast)
-            p.hidden = (hid[name] ?? .distantPast) > back || (cutoff.map { back < $0 } ?? false)
+            p.hidden = hiddenNow[name] == true || (cutoff.map { back < $0 } ?? false)
             list[name] = p
         }
         return list.values.sorted { $0.last > $1.last }
@@ -228,8 +257,8 @@ public enum TimeLog {
             switch e.event {
             case "start":
                 close(e.host, at: e.ts)
-                open[e.host] = TimeSession(host: e.host, device: e.device, project: e.project, source: e.source,
-                                           app: e.app, countdown: e.countdown, start: e.ts)
+                open[e.host] = TimeSession(id: "\(e.host) \(stamp.string(from: e.ts))", host: e.host, device: e.device,
+                                           project: e.project, source: e.source, app: e.app, countdown: e.countdown, start: e.ts)
             case "name":
                 open[e.host]?.project = e.project
                 open[e.host]?.source = e.source ?? "named"
@@ -252,7 +281,33 @@ public enum TimeLog {
                 break
             }
         }
-        return (done + open.values).sorted { $0.start < $1.start }
+        // Fixes, in order, the last word winning: a new project, start or end, or out and back in.
+        var all = done + open.values
+        var gone = Set<String>()
+        for e in events.sorted(by: { $0.ts < $1.ts }) where ["edit", "delete", "undelete", "rename"].contains(e.event) {
+            // A rename takes every session of that project, whenever it ran.
+            // ponytail: renames all of history, not from its day on; split by date if that ever matters.
+            if e.event == "rename" {
+                let from = e.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let to = e.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !from.isEmpty, !to.isEmpty, from != to else { continue }
+                for i in all.indices where all[i].project == from { all[i].project = to }
+                continue
+            }
+            guard let id = e.id, let i = all.firstIndex(where: { $0.id == id }) else { continue }
+            switch e.event {
+            case "delete": gone.insert(id)
+            case "undelete": gone.remove(id)
+            default:
+                if let p = e.project?.trimmingCharacters(in: .whitespacesAndNewlines) { all[i].project = p.isEmpty ? nil : p; all[i].source = "named" }
+                if let start = e.start { all[i].start = start }
+                if let end = e.end, all[i].end != nil { all[i].end = end }
+                if let end = all[i].end, end < all[i].start { all[i].end = all[i].start }
+                // Pauses can't be longer than the session they are in.
+                if let end = all[i].end { all[i].paused = min(all[i].paused, end.timeIntervalSince(all[i].start)) }
+            }
+        }
+        return all.filter { !gone.contains($0.id) }.sorted { $0.start < $1.start }
     }
 
     /// Alarms and reminders still set (not taken back), soonest first. Past ones are kept: the
@@ -283,8 +338,9 @@ public enum TimeLog {
         return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
     }
 
-    /// "1 h 12 min", "35 min": for totals.
+    /// "1 h 12 min", "35 min", "42 s": for totals. Under a minute shows its seconds, never "0 min".
     public static func span(_ seconds: TimeInterval) -> String {
+        if seconds > 0 && seconds < 60 { return "\(max(1, Int(seconds))) s" }
         let m = Int(max(0, seconds) / 60)
         return m >= 60 ? (m % 60 == 0 ? "\(m / 60) h" : "\(m / 60) h \(m % 60) min") : "\(m) min"
     }

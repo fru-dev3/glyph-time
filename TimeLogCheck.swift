@@ -70,13 +70,13 @@ assert(!sum.contains("\u{2014}"), "no em dashes")
 let ph = "iphone-16-pro"
 let marks: [TimeEvent] = [
     TimeEvent("alarm", at: at(1), host: ph, at: at(600), label: "Gym", id: "a1"),
-    TimeEvent("reminder", at: at(2), host: ph, at: at(120), label: "Call Sam", id: "r1"),
+    TimeEvent("reminder", at: at(2), host: ph, at: at(120), label: "Call Ken", id: "r1"),
     TimeEvent("reminder", at: at(3), host: ph, at: at(90), label: "Gone", id: "r2"),
     TimeEvent("reminder", at: at(4), host: ph, answer: "cancel", id: "r2"),
 ]
 let rl = TimeLog.line(marks[0])
 assert(TimeLog.events(in: rl) == [marks[0]] && String(decoding: rl, as: UTF8.self).contains("\"label\":\"Gym\""))
-assert(TimeLog.reminders(marks.shuffled()).map(\.label) == ["Call Sam", "Gym"])
+assert(TimeLog.reminders(marks.shuffled()).map(\.label) == ["Call Ken", "Gym"])
 assert(TimeLog.sessions(marks + day).count == 2)
 // Recent projects: newest first, hide and show are lines, starting again un-hides, auto-hide by age.
 let hp = "laptop-local"
@@ -96,4 +96,51 @@ assert(ps.first(where: { $0.name == "Acme" })?.hidden == false, "show restores")
 ps = TimeLog.projects(pl, now: at(240).addingTimeInterval(40 * 86_400), autoHideDays: 30)
 assert(ps.allSatisfy(\.hidden), "auto-hide after 30 days")
 assert(TimeLog.recentMonths(count: 12).count == 12)
+// A hide in the same second the project started still hides it (lines are stamped to the second);
+// a show in the same second as the hide puts it back. Line order decides.
+let same = [TimeEvent("start", at: at(300), host: hp, project: "Fast"), TimeEvent("hide", at: at(300), host: hp, project: "Fast")]
+assert(TimeLog.projects(same, now: at(301)).first { $0.name == "Fast" }?.hidden == true, "hide in the start's second")
+assert(TimeLog.projects(same + [TimeEvent("show", at: at(300), host: hp, project: "Fast")], now: at(301)).first { $0.name == "Fast" }?.hidden == false)
+// Read back from the file (stamped to the second), the same holds.
+let dir2 = FileManager.default.temporaryDirectory.appendingPathComponent("timelog-\(UUID().uuidString)")
+let sec = Date(timeIntervalSince1970: 1_800_000_000.4)
+for e in [TimeEvent("start", at: sec, host: hp, project: "Fast"), TimeEvent("hide", at: sec.addingTimeInterval(0.3), host: hp, project: "Fast")] { try! TimeLog.append(e, to: dir2) }
+assert(TimeLog.projects(TimeLog.read(dir2, months: [TimeLog.month(sec)]), now: sec).first?.hidden == true, "hide sticks after a round trip")
+try? FileManager.default.removeItem(at: dir2)
+// Under a minute reads in seconds, never "0 min".
+assert(TimeLog.span(42) == "42 s" && TimeLog.span(0.4) == "1 s" && TimeLog.span(0) == "0 min" && TimeLog.span(60) == "1 min")
+// Fixing the record: a session's id is its device and first start; edit, delete and undelete are lines.
+let base = [TimeEvent("start", at: at(0), host: hp, project: "Acme"), TimeEvent("pause", at: at(10), host: hp),
+            TimeEvent("resume", at: at(20), host: hp), TimeEvent("stop", at: at(60), host: hp)]
+let one = TimeLog.sessions(base)[0]
+assert(one.id.hasPrefix("laptop-local 20") && one.active() == 50 * 60, one.id)
+var fixed = TimeLog.sessions(base + [TimeEvent("edit", at: at(100), host: "iphone-x", project: "Beta", id: one.id, start: at(-30))])
+assert(fixed[0].project == "Beta" && fixed[0].start == at(-30) && fixed[0].active() == 80 * 60 && fixed[0].id == one.id, "\(fixed)")
+fixed = TimeLog.sessions(base + [TimeEvent("edit", at: at(100), host: hp, id: one.id, end: at(15))])
+assert(fixed[0].end == at(15) && fixed[0].active() == 5 * 60, "an earlier end trims the pause too: \(fixed[0].active())")
+fixed = TimeLog.sessions(base + [TimeEvent("edit", at: at(100), host: hp, id: one.id, start: at(90))])
+assert(fixed[0].active() == 0, "a start after the end never goes negative")
+assert(TimeLog.sessions(base + [TimeEvent("delete", at: at(100), host: hp, id: one.id)]).isEmpty)
+assert(TimeLog.sessions(base + [TimeEvent("delete", at: at(100), host: hp, id: one.id), TimeEvent("undelete", at: at(101), host: hp, id: one.id)]).count == 1)
+assert(TimeLog.sessions(base + [TimeEvent("edit", at: at(100), host: hp, project: "X", id: "nobody")])[0].project == "Acme", "an unknown id changes nothing")
+let editLine = TimeLog.line(TimeEvent("edit", at: at(100), host: hp, id: one.id, start: at(-30), end: at(70)))
+assert(TimeLog.events(in: editLine).first?.end == at(70) && String(decoding: editLine, as: UTF8.self).contains("\"start\":"))
+// Renaming a project: every session of it, whenever it ran, and the hide follows the new name.
+let ren = [TimeEvent("start", at: at(0), host: hp, project: "Old Name"), TimeEvent("stop", at: at(30), host: hp),
+           TimeEvent("start", at: at(60), host: hp, project: "Old Name"), TimeEvent("stop", at: at(90), host: hp),
+           TimeEvent("start", at: at(120), host: hp, project: "Other"), TimeEvent("stop", at: at(130), host: hp),
+           TimeEvent("hide", at: at(140), host: hp, project: "Old Name"),
+           TimeEvent("rename", at: at(150), host: "iphone-x", project: "Old Name", label: "Acme Corp")]
+let rs = TimeLog.sessions(ren)
+assert(rs.filter { $0.project == "Acme Corp" }.count == 2 && !rs.contains { $0.project == "Old Name" }, "\(rs)")
+let rp = TimeLog.projects(ren, now: at(160))
+assert(rp.first(where: { $0.name == "Acme Corp" })?.total == 60 * 60, "both sessions count under the new name")
+assert(rp.first(where: { $0.name == "Acme Corp" })?.hidden == true, "the hide follows the rename")
+assert(!rp.contains { $0.name == "Old Name" })
+// Renamed twice: the last name wins. An empty or unchanged name does nothing.
+let renamedTwice = TimeLog.sessions(ren + [TimeEvent("rename", at: at(160), host: hp, project: "Acme Corp", label: "Acme")])
+assert(renamedTwice.filter { $0.project == "Acme" }.count == 2, "\(renamedTwice)")
+assert(TimeLog.sessions(ren + [TimeEvent("rename", at: at(160), host: hp, project: "Acme Corp", label: "  ")])
+    .filter { $0.project == "Acme Corp" }.count == 2, "an empty new name changes nothing")
+
 print("TimeLog ok")

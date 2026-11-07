@@ -194,6 +194,8 @@ struct Palette {
     var soft: Color { ink.opacity(0.5) }
     var track: Color { ink.opacity(dark ? 0.14 : 0.09) }
     var green: Color { dark ? .officeOnDark : .office }
+    /// The running colour: green for the first hour, orange in the second, red after two.
+    @MainActor var live: Color { [green, .orange, .red][Clock.shared.heat] }
 }
 
 /// The family mark: Glyph Time's own icon, the runner.
@@ -257,7 +259,7 @@ private extension View {
     func edgeBackground(_ radius: CGFloat, _ p: Palette, live: Bool = false) -> some View {
         let left = Edge.shared.side == .left, all = !Edge.shared.docked
         return background(EdgeShape(radius: radius, left: left, all: all).fill(p.fill))
-            .overlay(EdgeShape(radius: radius, left: left, all: all).strokeBorder(live ? p.green.opacity(0.55) : p.hairline, lineWidth: live ? 1 : 0.5))
+            .overlay(EdgeShape(radius: radius, left: left, all: all).strokeBorder(live ? p.live.opacity(0.55) : p.hairline, lineWidth: live ? 1 : 0.5))
             .clipShape(EdgeShape(radius: radius, left: left, all: all))
             .padding(.vertical, 6).padding(all ? .horizontal : left ? .trailing : .leading, 6) // room for the shadow
             .shadow(color: .black.opacity(p.dark ? 0.28 : 0.14), radius: 6, x: left ? 1 : -1, y: 1)
@@ -267,12 +269,15 @@ private extension View {
 /// Name, countdowns, settings: the same choices as the menu bar.
 private struct More: View {
     let clock: Clock, p: Palette
+    /// Naming is the card's own, so the menu asks for it here rather than opening a window. No
+    /// ellipsis on either: nothing comes forward to answer.
+    let name: () -> Void
     var body: some View {
         Menu {
             if clock.session != nil {
-                Button("Name This Session...") { Ask.name() }
+                Button("Name This Session", action: name)
             } else {
-                Button("Start Named...") { Ask.start() }
+                Button("Start Named", action: name)
             }
             Section("Count down") {
                 ForEach(StatusMenu.countdowns, id: \.self) { m in
@@ -282,6 +287,7 @@ private struct More: View {
             Divider()
             Button("Hide Edge Clock") { Edge.shared.shown = false }
             Button("Reset Clock Position") { Edge.shared.resetPosition() }
+            Button("History...") { HistoryWindow.show() }
             Button("Settings...") { SettingsWindow.show() }
         } label: {
             // Drawn, not a symbol: a menu label recolours symbols to white, unreadable on the light panel.
@@ -355,6 +361,14 @@ private struct Pill: ButtonStyle {
 /// one column on an 8pt grid, every gap measured to the ink.
 private struct Card: View {
     let clock: Clock, p: Palette
+    /// Naming happens in the card, on the name itself: click it and type (Fru, 2026-11-07:
+    /// "nameing the session isn't easy. it should happen without another popup"). Nothing comes
+    /// forward, nothing to dismiss, and the panel stays non-activating because it only takes key
+    /// when a field needs it (`becomesKeyOnlyIfNeeded`), so the app you are in keeps focus.
+    @State private var naming = false
+    @State private var draft = ""
+    @State private var wasInFront: NSRunningApplication?
+    @FocusState private var typing: Bool
 
     /// 45pt light digits: their cap height is 32pt, so the ink sits on the grid.
     private let digitSize: CGFloat = 45
@@ -363,6 +377,7 @@ private struct Card: View {
 
     private var title: String {
         if let nudge = clock.nudge { return nudge }
+        if Voice.shared.dictation.on { return Voice.shared.dictation.text.isEmpty ? "Listening..." : Voice.shared.dictation.text }
         if clock.session == nil { return "Glyph Time" }
         return clock.project
     }
@@ -373,8 +388,8 @@ private struct Card: View {
         let time = width(String(digits.map { $0.isNumber ? "8" : $0 }), digitFont) // grows only when the format does
         let header = 20 + 8 + width(title, .systemFont(ofSize: 15, weight: .semibold)) + 44 // gap, spacer, gap, the keep-open control
         let pill = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        let answers = clock.nudge == nil ? 0 : width("Keep going", pill) + width("Stop", pill) + 4 * 16 + 8
-        let keys: CGFloat = clock.session == nil ? 2 : 3 // primary, stop, More
+        let answers = clock.nudge == nil ? 0 : clock.undo != nil ? width("Undo", pill) + width("OK", pill) + 4 * 16 + 8 : width("Keep going", pill) + width("Stop", pill) + 4 * 16 + 8
+        let keys: CGFloat = 3 // primary, then stop (running) or the mic (idle), More
         return onGrid(max(time, header, answers, keys * 32 + (keys - 1) * 8, showsRecent ? Recent.columnWidth(clock.recent.prefix(5)) : 0))
     }
 
@@ -384,11 +399,32 @@ private struct Card: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Mark(size: 20)
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(clock.nudge == nil && (clock.guessed || clock.session == nil) ? p.soft : p.ink.opacity(0.88))
-                    .lineLimit(1)
-                    .accessibilityIdentifier("title")
+                // A label until you click it, a field while you type, and a label again after. It
+                // cannot be a field at all times: a text field in the card makes the panel key the
+                // moment the card appears, which brings Glyph Time to the front for doing nothing.
+                // And the keyboard cannot be had without key, so naming does take the front for as
+                // long as it lasts, and hands it straight back to what you were in (below).
+                if naming {
+                    TextField(clock.session == nil ? "What are you on?" : "Name this session", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(p.ink)
+                        .lineLimit(1)
+                        .focused($typing)
+                        .onSubmit(commit)
+                        .onExitCommand { done() } // Escape: as it was
+                        .accessibilityIdentifier("title-field")
+                        .testFrame("title-field")
+                } else {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(clock.nudge == nil && (clock.guessed || clock.session == nil) ? p.soft : p.ink.opacity(0.88))
+                        .lineLimit(1)
+                        .accessibilityIdentifier("title")
+                        .testFrame("title")
+                        .onTapGesture(perform: startNaming)
+                        .help(clock.session == nil ? "Click to start a named session" : "Click to name this session")
+                }
                 Spacer(minLength: 8)
                 KeepOpen(p: p)
             }
@@ -405,7 +441,7 @@ private struct Card: View {
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(p.track)
-                    Capsule().fill(clock.running ? p.green : p.soft)
+                    Capsule().fill(clock.running ? p.live : p.soft)
                         .frame(width: max(2, g.size.width * (clock.session == nil ? 0 : clock.progress)))
                 }
             }
@@ -422,9 +458,61 @@ private struct Card: View {
         .frame(width: contentWidth, alignment: .leading)
         .padding(16)
         .edgeBackground(16, p, live: clock.running)
+        // A nudge needs the line for its question, and a session that starts or ends is a different
+        // thing to name, so either one drops out of naming rather than typing into the wrong session.
+        .onChange(of: clock.nudge == nil) { _, _ in if naming { done() } }
+        .onChange(of: clock.running) { _, _ in if naming { done() } }
     }
 
-    private var answers: some View {
+    /// Prefilled with what it is called now (the guess included, so a wrong guess is edited rather
+    /// than retyped), selected on open. Return keeps it, Escape leaves it, empty changes nothing.
+    /// Click the name, type, press Return. Whatever was in front comes back the moment it is kept.
+    private func startNaming() {
+        guard clock.nudge == nil, !Voice.shared.dictation.on else { return }
+        draft = clock.session == nil ? "" : clock.project
+        wasInFront = NSWorkspace.shared.frontmostApplication
+        naming = true
+        typing = true
+        Edge.shared.panel?.makeKey() // the keyboard cannot be had without key
+    }
+
+    /// Out of naming, and the app you were in is in front again. Without this the card would keep
+    /// the front after a name, which is the whole complaint about the window it replaced.
+    private func done() {
+        naming = false
+        typing = false
+        Edge.shared.panel?.makeFirstResponder(nil)
+        // Handing the first responder back is not enough: the app stays active, so the next thing
+        // the clock does (a drag, a click) still happens as the active app. Step back explicitly,
+        // then put the one you were in in front.
+        NSApp.deactivate()
+        wasInFront?.activate()
+        wasInFront = nil
+    }
+
+    private func commit() {
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        done()
+        guard !name.isEmpty else { return }
+        if clock.session == nil { clock.start(project: name) } else if name != clock.project { clock.rename(name) }
+    }
+
+    @ViewBuilder private var answers: some View {
+        if clock.undo != nil {
+            HStack(spacing: 8) {
+                Button("Undo") { clock.closeSaid(undoing: true) }
+                    .buttonStyle(Pill(fill: p.green, ink: .white))
+                    .testFrame("Undo")
+                Button("OK") { clock.closeSaid(undoing: false) }
+                    .buttonStyle(Pill(fill: p.track, ink: p.ink))
+                    .testFrame("OK")
+            }
+        } else {
+            nudgeAnswers
+        }
+    }
+
+    private var nudgeAnswers: some View {
         HStack(spacing: 8) {
             Button("Keep going") { clock.answer(true) }
                 .buttonStyle(Pill(fill: p.green, ink: .white))
@@ -448,8 +536,15 @@ private struct Card: View {
             Key(symbol: main.symbol, label: main.label, ink: .white, fill: p.green, action: main.action).id(main.label)
             if clock.session != nil {
                 Key(symbol: "stop.fill", label: "Stop", ink: p.ink.opacity(0.6), weight: .regular) { clock.stop() }
+            } else {
+                // Say the project: tap, speak, tap again and it starts.
+                let on = Voice.shared.dictation.on
+                Key(symbol: on ? "stop.fill" : "mic.fill", label: on ? "Done Talking" : "Start by Voice",
+                    ink: on ? .white : p.green, fill: on ? .red.opacity(0.85) : p.green.opacity(0.14)) { Voice.shared.toggle() }
+                    // A new view per label, as the main key: same size, so without it the UI check never learns where "Done Talking" is.
+                    .id(on)
             }
-            More(clock: clock, p: p)
+            More(clock: clock, p: p, name: startNaming)
         }
     }
 }
@@ -525,7 +620,7 @@ private struct Recent: View {
 private struct TileMark: View {
     let clock: Clock, p: Palette
     var body: some View {
-        let on = clock.session != nil, live = clock.running, green = p.green
+        let on = clock.session != nil, live = clock.running, green = p.live
         Mark(size: 32)
             .opacity(on && !live ? 0.45 : 1) // paused: calm, the green steps back
             .overlay {

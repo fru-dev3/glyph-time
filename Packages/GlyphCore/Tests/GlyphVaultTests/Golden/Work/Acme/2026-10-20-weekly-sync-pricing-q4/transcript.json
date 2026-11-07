@@ -4,14 +4,14 @@
   "model": "apple-speech",
   "speakers": {
     "S1": "Me",
-    "S2": "Sam Lee"
+    "S2": "Ken Lee"
   },
   "segments": [
     {
       "start": 0.0,
       "end": 4.25,
       "speaker": "S1",
-      "text": "Thanks for joining, Sammy. Café prices / \"tiers\"?"
+      "text": "Thanks for joining, Kenny. Café prices / \"tiers\"?"
     },
     {
       "start": 65.5,

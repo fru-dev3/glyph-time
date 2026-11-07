@@ -148,7 +148,7 @@ extension Vault {
         for p in meta.people + s.people {
             if let account = index.account(of: p) { add(.account, account) }
         }
-        // "Sam" is not a second person next to a linked or suggested "Sam Lee".
+        // "Ken" is not a second person next to a linked or suggested "Ken Lee".
         let named = meta.people + s.people
         s.people.removeAll { p in named.contains { Entity.isShortForm(p, of: $0) } }
         for t in tidyTags(heard.topics).prefix(3) where !taken(meta.tags, t) && !s.tags.contains(t) {

@@ -1,7 +1,7 @@
 ---
 kind: person
 account: ACME
-aliases: [Sammy, Sam]
+aliases: [Kenny, Ken]
 ---
 
 Runs procurement.

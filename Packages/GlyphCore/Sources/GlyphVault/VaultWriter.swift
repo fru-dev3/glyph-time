@@ -34,6 +34,31 @@ extension Vault {
     /// Writes `meta.json` at the conversation's `id`.
     public func write(_ meta: Conversation) throws {
         try Vault.atomicWrite(url(meta.id).appending(path: "meta.json"), meta.json.pretty)
+        // notes.md says the same tags and entities in its front matter, so the Markdown alone
+        // tells where a recording is filed. Its other lines stay.
+        let notes = url(meta.id).appending(path: "notes.md")
+        if let md = try? String(contentsOf: notes, encoding: .utf8), let fixed = Vault.frontMatter(md, set: [
+            "people": meta.people, "tags": meta.tags, "entities": meta.links,
+        ]), fixed != md {
+            try Vault.atomicWrite(notes, fixed)
+        }
+    }
+
+    /// `md` with these front matter lists set in place (a missing one added before the closing
+    /// `---`; an empty `entities` left out). Nil when `md` has no front matter.
+    static func frontMatter(_ md: String, set lists: [String: [String]]) -> String? {
+        guard md.hasPrefix("---\n"), let end = md.dropFirst(4).range(of: "\n---") else { return nil }
+        var head = md[md.index(md.startIndex, offsetBy: 4)..<end.lowerBound].split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        for key in lists.keys.sorted() {
+            let values = lists[key] ?? []
+            let line = "\(key): [\(values.joined(separator: ", "))]"
+            if let i = head.firstIndex(where: { $0.hasPrefix(key + ":") }) {
+                if values.isEmpty && key == "entities" { head.remove(at: i) } else { head[i] = line }
+            } else if !(values.isEmpty && key == "entities") {
+                head.append(line)
+            }
+        }
+        return "---\n" + head.joined(separator: "\n") + md[end.lowerBound...]
     }
 
     /// Writes `transcript.json` and the derived `transcript.txt`, and stamps `updated`.
@@ -47,7 +72,7 @@ extension Vault {
     /// Writes `notes.md` (front matter from meta.json) and stamps `updated`.
     public func writeNotes(_ notes: Notes, for id: String) throws {
         let meta = try conversation(id)
-        let md = notes.rendered(title: meta.title, date: String(meta.created.prefix(10)), people: meta.people, tags: meta.tags)
+        let md = notes.rendered(title: meta.title, date: String(meta.created.prefix(10)), people: meta.people, tags: meta.tags, entities: meta.links)
         try Vault.atomicWrite(url(id).appending(path: "notes.md"), md)
         try touch(id)
     }

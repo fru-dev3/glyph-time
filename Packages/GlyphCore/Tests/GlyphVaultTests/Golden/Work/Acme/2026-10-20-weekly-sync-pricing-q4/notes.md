@@ -1,7 +1,7 @@
 ---
 title: Weekly sync: pricing "Q4"
 date: 2026-10-20
-people: [Sam Lee, Kim Park]
+people: [Ken Lee, Kim Park]
 tags: [q4-renewal, pricing]
 ---
 
@@ -13,5 +13,5 @@ The price holds.
 - Hold the price
 
 ## Action items
-- [x] Send the order form  <!-- owner: Sam Lee; due: 2026-10-24 -->
+- [x] Send the order form  <!-- owner: Ken Lee; due: 2026-10-24 -->
 - [x] Share the price sheet

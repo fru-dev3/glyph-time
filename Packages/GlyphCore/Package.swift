@@ -25,12 +25,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "GlyphVault"),
-        .target(name: "GlyphCapture", dependencies: ["GlyphVault", .product(name: "FluidAudio", package: "FluidAudio")]),
+        .target(name: "GlyphCapture", dependencies: ["GlyphVault", "GlyphAI", .product(name: "FluidAudio", package: "FluidAudio")]),
         .target(name: "GlyphAI", dependencies: ["GlyphVault"]),
         .target(name: "GlyphCore", dependencies: ["GlyphVault", "GlyphCapture", "GlyphAI"]),
-        .executableTarget(name: "glyphcore-report", dependencies: ["GlyphVault"]),
+        .executableTarget(name: "glyphcore-report", dependencies: ["GlyphVault", "GlyphAI"]),
         .testTarget(name: "GlyphVaultTests", dependencies: ["GlyphVault"], resources: [.copy("Fixtures"), .copy("Golden")]),
-        .testTarget(name: "GlyphCaptureTests", dependencies: ["GlyphCapture"]),
-        .testTarget(name: "GlyphAITests", dependencies: ["GlyphAI"]),
+        .testTarget(name: "GlyphCaptureTests", dependencies: ["GlyphCapture", "GlyphAI", "GlyphVault"]),
+        .testTarget(name: "GlyphAITests", dependencies: ["GlyphAI", "GlyphVault"]),
     ]
 )

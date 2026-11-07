@@ -116,7 +116,7 @@ enum Rules {
     /// The project or repo a terminal, editor or AI app window is on, from its title (and the
     /// file or folder it shows, `AXDocument`). Best effort, nil if unknown. Editors read
     /// "Rules.swift \u{2014} acme-api" (Xcode and Zed the other way round), terminals show the
-    /// folder ("acme-api \u{2014} -zsh \u{2014} 80x24", "sam@laptop:~/code/acme-api"), AI apps
+    /// folder ("acme-api \u{2014} -zsh \u{2014} 80x24", "ken@laptop:~/code/acme-api"), AI apps
     /// "acme-api \u{2014} Codex". `user` is the home folder's name: a shell at home is no project.
     static func project(title: String, document: String? = nil, bundle: String, app: String, user: String = "") -> String? {
         guard projectApps.contains(bundle) else { return nil }
@@ -130,7 +130,7 @@ enum Rules {
            document.hasSuffix("/") || [".xcodeproj/", ".xcworkspace/"].contains(where: document.hasSuffix) {
             if let name = clean(url.lastPathComponent) { return name }
         }
-        // "sam@laptop:~/code/acme-api", "~/code/acme-api": the path's last folder.
+        // "ken@laptop:~/code/acme-api", "~/code/acme-api": the path's last folder.
         if terminals.contains(bundle) || chats.contains(bundle),
            let range = title.range(of: "(?<=^|[\\s:])~?/[^\\s:()\\[\\]]*", options: .regularExpression) {
             return clean(title[range].split(separator: "/").last.map(String.init))
@@ -156,7 +156,7 @@ enum Rules {
 
     // MARK: Forms
 
-    /// "Fill the form, name Sam, city Austin" -> "name Sam, city Austin". Nil for plain dictation.
+    /// "Fill the form, name Ken, city Austin" -> "name Ken, city Austin". Nil for plain dictation.
     static func formRequest(_ text: String) -> String? {
         let pattern = "^\\s*(?:please\\s+)?fill\\s+(?:in\\s+|out\\s+)?(?:the\\s+|this\\s+)?form\\b[\\s,.:;]*"
         guard let range = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return nil }

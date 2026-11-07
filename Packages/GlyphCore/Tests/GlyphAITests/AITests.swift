@@ -19,26 +19,26 @@ import GlyphVault
 }
 
 @Test func promptsCarryTitleDateAndTranscript() {
-    let p = Summarizer.prompt(title: "Weekly sync", date: "2026-10-20", transcript: "[00:00] Sam Lee: Hello.")
-    #expect(p.contains("\"Weekly sync\"") && p.contains("recorded on 2026-10-20") && p.hasSuffix("[00:00] Sam Lee: Hello."))
+    let p = Summarizer.prompt(title: "Weekly sync", date: "2026-10-20", transcript: "[00:00] Ken Lee: Hello.")
+    #expect(p.contains("\"Weekly sync\"") && p.contains("recorded on 2026-10-20") && p.hasSuffix("[00:00] Ken Lee: Hello."))
     #expect(Summarizer.partPrompt("x").hasSuffix("TRANSCRIPT PART:\nx"))
 }
 
 @Test func firstNameOwnersGetTheLinkedFullName() {
     let g = GeneratedNotes(summary: "s", decisions: [], actions: [
-        GeneratedAction(text: "Send the form", owner: "Sam", due: nil),
+        GeneratedAction(text: "Send the form", owner: "Ken", due: nil),
         GeneratedAction(text: "Book the room", owner: "Kim", due: nil),
         GeneratedAction(text: "Call Pat", owner: "Pat", due: nil),
     ])
-    let heard = "Sam will send the form, Kim books the room, Pat gets a call."
-    let n = Summarizer.notes(from: g, heard: heard, people: ["Sam Lee", "Kim Park", "Kim Ortiz"])
-    #expect(n.actions.map(\.owner) == ["Sam Lee", "Kim", "Pat"], "one Sam resolves; two Kims and an unlinked Pat stay as said")
-    #expect(Summarizer.notes(from: g, heard: heard).actions[0].owner == "Sam", "no linked people: unchanged")
+    let heard = "Ken will send the form, Kim books the room, Pat gets a call."
+    let n = Summarizer.notes(from: g, heard: heard, people: ["Ken Lee", "Kim Park", "Kim Ortiz"])
+    #expect(n.actions.map(\.owner) == ["Ken Lee", "Kim", "Pat"], "one Ken resolves; two Kims and an unlinked Pat stay as said")
+    #expect(Summarizer.notes(from: g, heard: heard).actions[0].owner == "Ken", "no linked people: unchanged")
 }
 
 @Test func modelAnswersAreCleaned() {
     let g = GeneratedNotes(summary: "  Acme renews. ", decisions: ["Hold the price", " ", "None."], actions: [
-        GeneratedAction(text: "Send the order form", owner: "Sam Lee", due: "2026-10-24"),
+        GeneratedAction(text: "Send the order form", owner: "Ken Lee", due: "2026-10-24"),
         GeneratedAction(text: "Share the sheet", owner: "null", due: "Friday"),
         GeneratedAction(text: " ", owner: nil, due: nil),
         GeneratedAction(text: "Call back", owner: " ", due: "N/A"),
@@ -50,17 +50,17 @@ import GlyphVault
         GeneratedAction(text: "No other decisions mentioned", owner: nil, due: nil),
         GeneratedAction(text: "Note the price", owner: nil, due: nil),
     ])
-    let n = Summarizer.notes(from: g, heard: "Sam Lee will send it by October 24.")
+    let n = Summarizer.notes(from: g, heard: "Ken Lee will send it by October 24.")
     #expect(n.summary == "Acme renews.")
     #expect(n.decisions == ["Hold the price"])
     #expect(n.actions == [
-        ActionItem(text: "Send the order form", owner: "Sam Lee", due: "2026-10-24"),
+        ActionItem(text: "Send the order form", owner: "Ken Lee", due: "2026-10-24"),
         ActionItem(text: "Share the sheet"),
         ActionItem(text: "Call back"),
         ActionItem(text: "Invented"),
         ActionItem(text: "Note the price"),
     ], "an owner or a date the call never says is dropped, and so is a repeat")
-    #expect(Summarizer.notes(from: g, heard: "Sam Lee will send it.").actions.allSatisfy { $0.due == nil })
+    #expect(Summarizer.notes(from: g, heard: "Ken Lee will send it.").actions.allSatisfy { $0.due == nil })
 
     #expect(Summarizer.saysDay("2026-10-24", in: "send it by 2026-10-24"))
     #expect(Summarizer.saysDay("2026-10-23", in: "by Friday please"), "2026-10-23 is a Friday")
@@ -89,9 +89,9 @@ import GlyphVault
     }
     let dir = FileManager.default.temporaryDirectory.appending(path: "glyph-ai-\(UUID().uuidString)")
     let vault = Vault(root: dir)
-    try vault.saveEntity(Entity(kind: .person, name: "Sam Lee"))
+    try vault.saveEntity(Entity(kind: .person, name: "Ken Lee"))
     let id = try vault.createConversation(in: "Work", title: "Weekly sync with Acme", created: try Date("2026-10-20T15:00:00Z", strategy: .iso8601)).id
-    try vault.writeTranscript(Transcript(language: "en", model: "apple-speech", speakers: ["S1": "Kim Park", "S2": "Sam Lee"], segments: [
+    try vault.writeTranscript(Transcript(language: "en", model: "apple-speech", speakers: ["S1": "Kim Park", "S2": "Ken Lee"], segments: [
         .init(start: 0, end: 10, speaker: "S1", text: "Thanks for joining. Acme wants to renew next quarter."),
         .init(start: 10, end: 20, speaker: "S2", text: "We agreed to hold the price at last year's level."),
         .init(start: 20, end: 30, speaker: "S2", text: "I will send the signed order form by October 24, 2026."),
@@ -105,7 +105,7 @@ import GlyphVault
 
     let meta = try await LinkSuggester().suggest(id, in: vault)
     print("suggested: \(meta.suggested)")
-    #expect(meta.suggested.people.contains("Sam Lee"), "a known name the call says")
+    #expect(meta.suggested.people.contains("Ken Lee"), "a known name the call says")
     #expect(meta.suggested.tags.count <= 3)
 }
 
@@ -114,13 +114,13 @@ import GlyphVault
     guard OnDeviceModel.status == .available else { try Test.cancel("Apple Intelligence is \(OnDeviceModel.status) on this Mac.") }
     let lines = [
         "Kim Park: Let's go through the Acme renewal pricing tiers one more time.",
-        "Sam Lee: The board wants the price held at last year's level for every tier.",
+        "Ken Lee: The board wants the price held at last year's level for every tier.",
         "Kim Park: Then we need the support hours and the onboarding plan written down too.",
-        "Sam Lee: I can draft the onboarding plan once legal reviews the contract.",
+        "Ken Lee: I can draft the onboarding plan once legal reviews the contract.",
     ]
     var segments: [Transcript.Segment] = []
     for i in 0..<240 { segments.append(.init(start: Double(i * 5), end: Double(i * 5 + 5), text: lines[i % lines.count])) }
-    segments.append(.init(start: 1_200, end: 1_205, text: "Sam Lee: Final decision: we hold the price, and Kim sends the contract to legal by 2026-11-02."))
+    segments.append(.init(start: 1_200, end: 1_205, text: "Ken Lee: Final decision: we hold the price, and Kim sends the contract to legal by 2026-11-02."))
     let transcript = Transcript(language: "en", model: "apple-speech", segments: segments)
     #expect(transcript.plainText.count > 2 * Summarizer.partCharacters, "\(transcript.plainText.count) characters")
     let notes = try await Summarizer().summarize(transcript, title: "Acme renewal", date: "2026-10-20")

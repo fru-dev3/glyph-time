@@ -28,7 +28,7 @@ let fixture = Vault(root: Bundle.module.url(forResource: "Fixtures", withExtensi
     #expect(n.summary == "Acme wants to renew next quarter. Price stays at last year's level.")
     #expect(n.decisions == ["Hold the price at last year's level"])
     #expect(n.actions == [
-        ActionItem(text: "Send the signed order form", done: false, owner: "Sam Lee", due: "2026-10-24"),
+        ActionItem(text: "Send the signed order form", done: false, owner: "Ken Lee", due: "2026-10-24"),
         ActionItem(text: "Share last year's price sheet", done: true),
     ])
     #expect(fixture.notes("Home/2026-10-24-contractor-call").actions.map(\.text) == ["Pay the deposit"], "## Actions works too")
@@ -37,23 +37,23 @@ let fixture = Vault(root: Bundle.module.url(forResource: "Fixtures", withExtensi
 
 @Test func transcriptPlainTextNamesSpeakers() {
     let t = fixture.transcript("Work/Acme/2026-10-20-weekly-sync")
-    #expect(t.plainText.hasPrefix("[00:00] Me: Thanks for joining, Sammy."))
-    #expect(t.plainText.contains("[00:20] Sam Lee: Good."))
+    #expect(t.plainText.hasPrefix("[00:00] Me: Thanks for joining, Kenny."))
+    #expect(t.plainText.contains("[00:20] Ken Lee: Good."))
     #expect(fixture.transcript("Work/does-not-exist").segments.isEmpty)
 }
 
 @Test func peopleAndAccountsResolveAliasesAndEmployers() {
     let dir = fixture.directory()
     let count = { (name: String) in dir.entities.first { $0.entity.name == name }!.count }
-    #expect(dir.entities.map(\.entity.name) == ["Acme Corp", "Globex", "Kim Park", "Sam Lee"])
-    #expect(count("Acme Corp") == 1, "Sam works at ACME, an alias of Acme Corp")
+    #expect(dir.entities.map(\.entity.name) == ["Acme Corp", "Globex", "Ken Lee", "Kim Park"])
+    #expect(count("Acme Corp") == 1, "Ken works at ACME, an alias of Acme Corp")
     #expect(count("Globex") == 1, "linked directly and through Kim: still one call")
     #expect(dir.entities.first { $0.entity.name == "Globex" }!.entity.body == "Hand-written note, no front matter.\n")
     #expect(dir.tags.map(\.name) == ["hiring", "pricing", "renewal"])
 
     let ix = EntityIndex(fixture.entities())
-    #expect(ix.canonical(.person, " sammy ") == "Sam Lee")
-    #expect(ix.account(of: "Sam") == "Acme Corp")
+    #expect(ix.canonical(.person, " kenny ") == "Ken Lee")
+    #expect(ix.account(of: "Ken") == "Acme Corp")
     #expect(ix.canonical(.person, "Pat Doe") == "Pat Doe", "unknown names pass through")
 }
 

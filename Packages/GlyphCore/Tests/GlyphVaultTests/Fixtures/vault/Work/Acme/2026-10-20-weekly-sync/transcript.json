@@ -4,14 +4,14 @@
   "model": "apple-speech",
   "speakers": {
     "S1": "Me",
-    "S2": "Sam Lee"
+    "S2": "Ken Lee"
   },
   "segments": [
     {
       "start": 0.0,
       "end": 19.0,
       "speaker": "S1",
-      "text": "Thanks for joining, Sammy. How are things at Acme?"
+      "text": "Thanks for joining, Kenny. How are things at Acme?"
     },
     {
       "start": 20.0,
@@ -29,7 +29,7 @@
       "start": 60.0,
       "end": 79.0,
       "speaker": "S2",
-      "text": "Sam will send the signed order form by Friday."
+      "text": "Ken will send the signed order form by Friday."
     }
   ]
 }

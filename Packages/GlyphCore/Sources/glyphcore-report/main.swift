@@ -1,10 +1,23 @@
 // Prints what GlyphCore reads from a vault as JSON, the same shape as Memosa's
 // `cargo run --example vault_report`, so the two readers can be compared:
 // glyphcore-report <vault> [search phrase...]
+//
+// And the door to document filing for shells and agents (FileCommand.swift):
+// glyphcore-report file <path> [--from <sender>] [--subject s] [--date d] [--account a] [--domain d] [--json] ...
+//
+// And Glyph Time's routine ideas (RoutinesCommand.swift): glyphcore-report routines suggest [--vault v] [--dry-run]
+//
+// And the app agents' tools (AgentsCommand.swift): glyphcore-report agents | run <agent> <tool> '<json>' | undo '<json>'
 import Foundation
 import GlyphVault
 
 let args = CommandLine.arguments
+if args.count >= 2, args[1] == "file" { exit(await FileCommand.run(Array(args.dropFirst(2)))) }
+if args.count >= 2, args[1] == "agents" { exit(AgentsCommand.agents()) }
+if args.count >= 2, args[1] == "run" { exit(await AgentsCommand.run(Array(args.dropFirst(2)))) }
+if args.count >= 2, args[1] == "routines" { exit(RoutinesCommand.run(Array(args.dropFirst(2)))) }
+if args.count >= 2, args[1] == "connect" { exit(await ConnectCommand.run(Array(args.dropFirst(2)))) }
+if args.count >= 2, args[1] == "undo" { exit(await AgentsCommand.run(Array(args.dropFirst(1)))) }
 guard args.count >= 2 else {
     FileHandle.standardError.write(Data("usage: glyphcore-report <vault> [search phrase...]\n".utf8))
     exit(1)

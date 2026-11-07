@@ -28,24 +28,24 @@ import Testing
 /// The files the golden vault holds, vault-relative.
 func buildGoldenVault(_ v: Vault) throws -> [String] {
     let id = try v.createConversation(in: "Work/Acme", title: "Weekly sync: pricing \"Q4\"", created: try Date("2026-10-20T15:00:00Z", strategy: .iso8601), device: "laptop").id
-    var sam = Entity(kind: .person, name: "Sam Lee")
-    sam.account = "Acme Corp"
-    sam.aliases = ["Sammy", "Sam"]
-    sam.body = "Runs procurement.\n"
-    try v.saveEntity(sam)
-    try v.setLinks(id, people: ["sammy", "Kim Park"], accounts: ["acme corp"], tags: ["#Q4 Renewal", "pricing"])
-    try v.writeTranscript(Transcript(language: "en", model: "apple-speech", speakers: ["S2": "Sam Lee", "S1": "Me"], segments: [
-        .init(start: 0, end: 4.25, speaker: "S1", text: "Thanks for joining, Sammy. Café prices / \"tiers\"?"),
+    var ken = Entity(kind: .person, name: "Ken Lee")
+    ken.account = "Acme Corp"
+    ken.aliases = ["Kenny", "Ken"]
+    ken.body = "Runs procurement.\n"
+    try v.saveEntity(ken)
+    try v.setLinks(id, people: ["kenny", "Kim Park"], accounts: ["acme corp"], tags: ["#Q4 Renewal", "pricing"])
+    try v.writeTranscript(Transcript(language: "en", model: "apple-speech", speakers: ["S2": "Ken Lee", "S1": "Me"], segments: [
+        .init(start: 0, end: 4.25, speaker: "S1", text: "Thanks for joining, Kenny. Café prices / \"tiers\"?"),
         .init(start: 65.5, end: 70, speaker: "S2", text: "Hold the price\tat last year's level."),
         .init(start: 3_601, end: 3_602, text: "Bye."),
     ]), for: id)
     try v.suggest(id, heard: Heard(people: ["Kim Park"], companies: ["Globex"], topics: ["Budget"]))
     try v.answerSuggestion(id, .tag("budget"), accept: false)
     try v.writeNotes(Notes(summary: "Acme renews next quarter.\nThe price holds.", decisions: ["Hold the price"], actions: [
-        ActionItem(text: "Send the order form", owner: "Sam Lee", due: "2026-10-24"),
+        ActionItem(text: "Send the order form", owner: "Ken Lee", due: "2026-10-24"),
         ActionItem(text: "Share the price sheet", done: true),
     ]), for: id)
     try v.setTask(id, text: "Send the order form", done: true)
     return ["\(id)/meta.json", "\(id)/transcript.json", "\(id)/transcript.txt", "\(id)/notes.md",
-            "People/Sam Lee.md", "People/Kim Park.md", "Accounts/Acme Corp.md"]
+            "People/Ken Lee.md", "People/Kim Park.md", "Accounts/Acme Corp.md"]
 }

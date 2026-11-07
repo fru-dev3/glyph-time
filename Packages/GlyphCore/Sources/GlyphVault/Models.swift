@@ -243,8 +243,11 @@ public struct Notes: Equatable, Sendable {
 
     /// `notes.md` with front matter, as Memosa writes it. `date` is `YYYY-MM-DD`.
     /// Decisions appear only when there are some; Summary and Action items always do.
-    public func rendered(title: String, date: String, people: [String], tags: [String]) -> String {
-        var out = "---\ntitle: \(title)\ndate: \(date)\npeople: [\(people.joined(separator: ", "))]\ntags: [\(tags.joined(separator: ", "))]\n---\n\n"
+    /// `entities`: the Glyph CRM ids the recording is filed under, the same key a note carries.
+    public func rendered(title: String, date: String, people: [String], tags: [String], entities: [String] = []) -> String {
+        var out = "---\ntitle: \(title)\ndate: \(date)\npeople: [\(people.joined(separator: ", "))]\ntags: [\(tags.joined(separator: ", "))]\n"
+        if !entities.isEmpty { out += "entities: [\(entities.joined(separator: ", "))]\n" }
+        out += "---\n\n"
         out += "## Summary\n" + summary.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n"
         if !decisions.isEmpty {
             out += "## Decisions\n" + decisions.map { "- \($0)\n" }.joined() + "\n"

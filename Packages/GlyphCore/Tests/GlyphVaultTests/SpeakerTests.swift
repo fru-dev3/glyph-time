@@ -47,8 +47,8 @@ import Testing
     ])
     #expect(t.name(of: "S2") == "Speaker 2")
     #expect(t.plainText.contains("[00:04] Speaker 2: Hi there."))
-    t.speakers["S2"] = "Sam Lee"
-    #expect(t.plainText.contains("[00:04] Sam Lee: Hi there."))
+    t.speakers["S2"] = "Ken Lee"
+    #expect(t.plainText.contains("[00:04] Ken Lee: Hi there."))
     #expect(t.talkTime.map(\.speaker) == ["S1", "S2"])
     #expect(t.talkTime.map(\.seconds) == [6, 6])
 }

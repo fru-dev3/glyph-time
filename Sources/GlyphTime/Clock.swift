@@ -48,9 +48,24 @@ final class Clock {
     private var countdownDone = false
     private var nudgeTask: Task<Void, Never>?
 
-    static let idleKey = "idleMinutes", nudgeKey = "nudgeMinutes", autoHideKey = "autoHideProjects"
+    static let idleKey = "idleMinutes", nudgeKey = "nudgeMinutes", autoHideKey = "autoHideProjects", chimeKey = "chimes"
+    static let autoStartKey = "autoStart"
+    /// A sound every 15 minutes: a tick, a different one on the half hour, a bigger one on the hour.
+    var chimes: Bool { UserDefaults.standard.object(forKey: Self.chimeKey) as? Bool ?? true }
+    private var lastQuarter = 0
+    private var quarter: Int { Int(elapsed / (15 * minute)) }
+    /// How long this session has run: 0 under an hour, 1 under two, 2 after. The green warms with it.
+    var heat: Int { min(2, Int(elapsed / (60 * minute))) }
     var nudgeMinutes: Int { UserDefaults.standard.object(forKey: Self.nudgeKey) as? Int ?? 30 }
     var idleMinutes: Int { UserDefaults.standard.object(forKey: Self.idleKey) as? Int ?? 5 }
+    /// Start timing by itself when work starts, so an hour is not lost to having forgotten to press
+    /// Start (Fru, 2026-11-07: "detect activity as i start workign or typing and begin detecting or
+    /// tracking time so it all fits into my analytics report").
+    var autoStart: Bool { UserDefaults.standard.object(forKey: Self.autoStartKey) as? Bool ?? true }
+    /// Stopped by hand means stopped: the same work does not start itself again inside this.
+    static var autoStartPause: TimeInterval = 15 * 60 // a var so the check can watch the window close
+    private(set) var stoppedProject: String?
+    private(set) var stoppedAt: Date?
     /// Away longer than this and an idle pause ends the session where you left instead of resuming.
     let awayLimit: TimeInterval = 30 * 60
     /// Seconds in a minute: 60, except in the UI test, which runs nudges and countdowns fast.
@@ -63,6 +78,7 @@ final class Clock {
         now = .now
         // No storm of nudges after a relaunch or a long sleep: start counting from here.
         lastBoundary = boundary
+        lastQuarter = quarter
         countdownDone = session?.countdown.map { elapsed >= Double($0) * minute } ?? false
         refreshToday()
         tick()
@@ -73,10 +89,12 @@ final class Clock {
 
     func start(project name: String? = nil, countdown: Int? = nil) {
         if session != nil { stop() }
+        stoppedProject = nil // started on purpose: nothing to hold back from starting itself
         let guess = name.map { (project: $0, source: "named", app: Optional<String>.none) } ?? Guess.front()
         write(TimeEvent("start", host: Store.host, device: Store.device, project: guess.project,
                         source: guess.source, app: guess.app, countdown: countdown))
         lastBoundary = 0
+        lastQuarter = 0
         skipNext = false
         countdownDone = false
         Edge.shared.update()
@@ -94,11 +112,22 @@ final class Clock {
 
     func toggle() { running ? pause() : paused ? resume() : start() }
 
-    func stop(at date: Date = .now) {
+    /// `byHand` is the difference between "I am done with this" and the clock closing a session
+    /// you walked away from: only the first holds the auto-start back.
+    func stop(at date: Date = .now, byHand: Bool = true) {
         guard let s = session else { return }
+        if byHand { stoppedProject = s.project; stoppedAt = .now }
         write(TimeEvent("stop", at: date, host: Store.host, minutes: Int((s.active(at: date) / 60).rounded())))
         endNudge()
         Store.writeSummary()
+    }
+
+    /// A line written somewhere else (History's rename, edit or delete): fold this Mac's open
+    /// session again, so the edge clock and the menu show what the file now says.
+    func reload() {
+        session = TimeLog.sessions(Store.recent().filter { $0.host == Store.host }).last { $0.end == nil }
+        refreshToday()
+        Edge.shared.update()
     }
 
     func rename(_ name: String) {
@@ -129,6 +158,7 @@ final class Clock {
         tick()
         StatusMenu.shared.update()
         Edge.shared.update()
+        if HistoryWindow.window?.isVisible == true { MacHistory.refresh() }
     }
 
     func refreshToday() {
@@ -157,10 +187,13 @@ final class Clock {
         now = .now
         seconds += 1
         if seconds % 5 == 0 { Watch.checkIdle() }
-        guard running, nudge == nil else { return }
+        guard running else { return }
+        chime()
+        guard nudge == nil else { return }
         if let target = session?.countdown, !countdownDone, elapsed >= Double(target) * minute {
             countdownDone = true
             show("Time is up on \(project)")
+            ring()
             return
         }
         let b = boundary
@@ -170,11 +203,33 @@ final class Clock {
         show("\(TimeLog.span(Double(b * nudgeMinutes * 60))) on \(project)")
     }
 
+    /// A countdown's end rings, always (it was asked for), every 5 seconds for up to a minute
+    /// while "Time is up" is still showing.
+    private func ring() {
+        Task { @MainActor in
+            for _ in 0..<12 {
+                guard nudge?.hasPrefix("Time is up") == true else { return }
+                NSSound(named: "Submarine")?.play()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private func chime() {
+        let q = quarter
+        guard q > lastQuarter else { return }
+        lastQuarter = q
+        guard chimes else { return }
+        NSSound(named: q % 4 == 0 ? "Hero" : q % 2 == 0 ? "Glass" : "Tink")?.play()
+    }
+
     /// The nudge slides out, stays 8 seconds, then fades back. Ignored once: the next one is skipped.
+    /// A countdown's "Time is up" stays until answered.
     func show(_ text: String) {
         nudge = text
         Edge.shared.update()
         nudgeTask?.cancel()
+        if text.hasPrefix("Time is up") { return }
         nudgeTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(UITest.nudgeSeconds ?? 8))
             guard !Task.isCancelled, nudge != nil else { return }
@@ -186,7 +241,31 @@ final class Clock {
         }
     }
 
+    /// A short note on the edge clock (what a spoken command did), gone after a few seconds.
+    /// Set while the note is what a spoken command did: the card offers Undo instead of a nudge's answers.
+    private(set) var undo: (() -> Void)?
+
+    func say(_ text: String, undo: (() -> Void)? = nil) {
+        nudge = text
+        self.undo = undo
+        Edge.shared.update()
+        nudgeTask?.cancel()
+        nudgeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(UITest.nudgeSeconds ?? 5))
+            guard !Task.isCancelled, nudge == text else { return }
+            endNudge()
+        }
+    }
+
+    /// Undo what was said, or just close the note.
+    func closeSaid(undoing: Bool) {
+        let u = undo
+        endNudge()
+        if undoing { u?() }
+    }
+
     private func endNudge() {
+        undo = nil
         nudgeTask?.cancel()
         nudge = nil
         Edge.shared.update()

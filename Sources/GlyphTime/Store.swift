@@ -4,7 +4,12 @@ import SystemConfiguration
 
 /// Where the sessions go: `<vault>/data/apps/time/sessions/` in a Glyph Studio vault, a hidden
 /// `.glyph-time/sessions/` in any other folder chosen in Settings, and Application Support when
-/// none is chosen. One file per month per Mac (`TimeLog`).
+/// none is chosen or the folder is away. One file per month per Mac (`TimeLog`).
+///
+/// Application Support is an **outbox, never a second store** (Fru, 2026-10-31: "if vault is taken
+/// away, writing locally, that's fine. Writing locally and then can sync it back to the vault").
+/// Lines written while the vault is unreachable are folded into it the moment it is back, same
+/// file names, same lines, so nothing is lost and nothing is written twice.
 enum Store {
     /// Same host naming as Glyph Jot and Studio's streams: "Mac-Name.local" -> "mac-name-local".
     /// From the Mac's own Bonjour name, never DNS (a DNS lookup can hang for minutes).
@@ -31,16 +36,158 @@ enum Store {
     static var folder: URL {
         vault?.appending(path: "data/apps/time/sessions")
             ?? chosen?.appending(path: ".glyph-time/sessions")
-            ?? URL.applicationSupportDirectory.appending(path: "Glyph Time/sessions")
+            ?? outbox
+    }
+
+    /// Where lines wait when the chosen folder or vault can't be reached. Application Support,
+    /// or the folder given with `-support` (the UI check, so a run never touches the real app's).
+    static var outbox: URL {
+        (UserDefaults.standard.string(forKey: "support").map { URL(filePath: $0) }
+            ?? URL.applicationSupportDirectory.appending(path: "Glyph Time")).appending(path: "sessions")
+    }
+
+    /// True while the sessions are going to the folder that was chosen, not to the outbox.
+    static var connected: Bool { chosen != nil }
+
+    /// What the shared vault view shows: where it writes, when it last did, and how many lines
+    /// are still waiting in the outbox.
+    static var vaultPath: String? { chosen?.path }
+    private(set) static var lastWrite: Date?
+    static var waiting: Int {
+        guard connected else { return 0 } // while away, the outbox is simply where it writes
+        return outboxFiles().reduce(0) { $0 + TimeLog.events(in: (try? Data(contentsOf: $1)) ?? Data()).count }
+    }
+
+    /// The session lines still waiting. The outbox holds whole folders, not one: `sessions/`
+    /// beside `activity/` and `captures/`, exactly as the vault does, because Tracking and
+    /// Captures hang off the same folder (`Store.folder`'s parent).
+    static func outboxFiles() -> [URL] { logs(in: "sessions") }
+
+    private static var outboxRoot: URL { outbox.deletingLastPathComponent() }
+    private static var liveRoot: URL { folder.deletingLastPathComponent() }
+
+    private static func logs(in part: String) -> [URL] {
+        guard outboxRoot != liveRoot else { return [] } // away: the outbox IS where it writes
+        let dir = outboxRoot.appending(path: part)
+        return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasSuffix(".jsonl") }.sorted().map { dir.appending(path: $0) }
+    }
+
+    /// Folds the outbox into the folder that is back, by file shape, never by folder:
+    /// - `sessions/` and `activity/` are append-only logs, one file per month or day per host, so
+    ///   they fold line by line into the file of the same name, skipping any line already there
+    ///   (lines are written with sorted keys, so the same event is the same bytes).
+    /// - everything else is whole files (`captures/<day>/` images, `projects/<name>.md` notes,
+    ///   `exports/`, an `archived-<date>/`), so each moves only into a name that is free, and is
+    ///   never appended to or written over. A shape nobody has thought of yet is treated this way
+    ///   too, so the worst it can do is wait.
+    ///
+    /// Safe to run twice and safe to interrupt: a half-done drain repeats without writing anything
+    /// twice, and a file is taken away only once its bytes are in the vault. The line-by-line skip
+    /// is what makes that true, and not only after a crash: if taking the file away fails (a folder
+    /// gone read-only), the next drain writes nothing rather than a second copy of every line.
+    /// (The shapes, and why a single append-everything sweep corrupts whole-file data: Glyph Well,
+    /// 2026-10-31.)
+    @discardableResult
+    static func drainOutbox() -> Int {
+        guard outboxRoot != liveRoot else { return 0 }
+        var moved = 0
+        do {
+            for part in ["sessions", "activity"] {
+                for file in logs(in: part) { moved += try fold(file, into: liveRoot.appending(path: part)) }
+            }
+            // The bug is never "the fallback folder", it is every shape in it (Glyph Jot, 2026-10-31):
+            // Tracking, Captures, the project notes and the exports all hang off this one root.
+            for part in ((try? FileManager.default.contentsOfDirectory(atPath: outboxRoot.path)) ?? []).sorted()
+            where !part.hasPrefix(".") && !["sessions", "activity"].contains(part) {
+                moved += try carry(outboxRoot.appending(path: part), into: liveRoot.appending(path: part))
+            }
+        } catch {
+            problem = "Can't move what is waiting into \(liveRoot.path): \(error.localizedDescription)"
+            log.error("outbox drain failed: \(error.localizedDescription, privacy: .public)")
+        }
+        if moved > 0 { log.info("outbox: \(moved, privacy: .public) folded into the vault") }
+        return moved
+    }
+
+    /// One append-only log, line by line into the file of its own name. The source goes away only
+    /// after the bytes are written, so an interrupted fold strands lines again rather than losing them.
+    private static func fold(_ file: URL, into dir: URL) throws -> Int {
+        guard let data = try? Data(contentsOf: file) else {
+            log.error("outbox: can't read \(file.lastPathComponent, privacy: .public), left where it is")
+            return 0 // left where it is: waiting is recoverable, and silence is not
+        }
+        let newline = UInt8(0x0A)
+        let target = dir.appending(path: file.lastPathComponent)
+        let already = (try? Data(contentsOf: target)) ?? Data()
+        let there = Set(already.split(separator: newline).map { Data($0) })
+        let lines = data.split(separator: newline).map { Data($0) }.filter { !there.contains($0) }
+        if !lines.isEmpty {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: target.path) { FileManager.default.createFile(atPath: target.path, contents: nil) }
+            let handle = try FileHandle(forWritingTo: target)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            // A write cut short leaves the file without its last newline; without this the first
+            // folded line would run into it and both become one unreadable line. (Glyph Jot, 2026-10-31.)
+            if let end = already.last, end != newline { try handle.write(contentsOf: Data([newline])) }
+            for line in lines { try handle.write(contentsOf: line + Data([newline])) }
+            try handle.close() // closed before reading it back, not left to the defer
+        }
+        // Read the file back and confirm every line of the outbox file is in it before unlinking.
+        // A write that throws is caught by the caller, but one that silently fell short would take
+        // the only copy of those lines with it, and a fold that loses a session is worse than one
+        // that never ran. If anything is missing the outbox file stays and the next drain retries:
+        // the lines already written are skipped by the same byte comparison, so a retry is free.
+        let landed = Set(((try? Data(contentsOf: target)) ?? Data()).split(separator: newline).map { Data($0) })
+        let mine = Set(data.split(separator: newline).map { Data($0) })
+        guard mine.isSubset(of: landed) else {
+            problem = "Kept \(file.lastPathComponent): not every line reached \(dir.path), so nothing was taken away."
+            log.error("outbox: \(mine.subtracting(landed).count, privacy: .public) line(s) did not land in \(file.lastPathComponent, privacy: .public); kept")
+            return 0
+        }
+        try FileManager.default.removeItem(at: file)
+        return lines.count
+    }
+
+    /// Whole files, at any depth: a capture inside its day folder, a project note, an export.
+    /// Each moves only into a name that is free. A name already taken is left where it is and not
+    /// merged, because merging two of them is a guess and the wrong guess quietly drops what was
+    /// written (the rule: Glyph Jot's words.json and Glyph Well's records.json, 2026-10-31). An
+    /// emptied folder goes away; one still holding something of its own stays.
+    private static func carry(_ dir: URL, into live: URL) throws -> Int {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: dir.path) else { return 0 } // a loose file: left alone
+        var moved = 0
+        for name in names.sorted() where !name.hasPrefix(".") {
+            let from = dir.appending(path: name), to = live.appending(path: name)
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: from.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                // A name that is a folder here and a file there is a taken name like any other:
+                // left alone, and the fold carries on past it rather than stopping (Glyph Jot, 2026-10-31).
+                var taken: ObjCBool = false
+                if fm.fileExists(atPath: to.path, isDirectory: &taken), !taken.boolValue { continue }
+                moved += try carry(from, into: to)
+                if ((try? fm.contentsOfDirectory(atPath: from.path)) ?? []).isEmpty { try? fm.removeItem(at: from) }
+            } else if !fm.fileExists(atPath: to.path) {
+                try fm.createDirectory(at: live, withIntermediateDirectories: true)
+                try fm.moveItem(at: from, to: to)
+                moved += 1
+            }
+        }
+        return moved
     }
 
     /// A line that can't be written is said once in the menu, never lost silently.
     private(set) static var problem: String?
 
     static func write(_ event: TimeEvent) {
+        if connected { drainOutbox() } // back from an away spell: the waiting lines go in first
         do {
             try TimeLog.append(event, to: folder)
-            problem = nil
+            lastWrite = .now
+            problem = connected ? nil : "Vault away. Saving here and folding it back when it returns."
         } catch {
             problem = "Can't save to \(folder.path): \(error.localizedDescription)"
             log.error("write failed: \(error.localizedDescription, privacy: .public)")
@@ -60,10 +207,13 @@ enum Store {
     /// last week, every device, at `data/domains/time/source/apps/time/summary.md`, where Studio
     /// reads a domain's sources. Written only when it changed.
     // ponytail: each Mac rewrites it from the same merged files; a hub-only writer if syncs ever clash.
-    static func writeSummary() {
+    @MainActor static func writeSummary() {
         guard let vault, FileManager.default.fileExists(atPath: vault.appending(path: "data/domains/time").path) else { return }
         let file = vault.appending(path: "data/domains/time/source/apps/time/summary.md")
+        // With Track apps and tabs, today's top apps and sites from every Mac follow the sessions.
+        let today = DateInterval(start: Calendar.current.startOfDay(for: .now), end: .now)
         let text = TimeLog.summary(TimeLog.sessions(TimeLog.read(folder, months: TimeLog.recentMonths())))
+            + ActivityMath.summary(Activity.read(today, folder: Activity.folder))
         guard (try? String(contentsOf: file, encoding: .utf8)) != text else { return }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)

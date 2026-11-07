@@ -71,7 +71,7 @@ public struct Entity: Equatable, Sendable {
 
 extension Entity {
     /// Whether `short` is a shorter way of saying the person `full`: each of its words
-    /// starts the matching word of `full` ("Sam" or "Sam L." for "Sam Lee"), and it is
+    /// starts the matching word of `full` ("Ken" or "Ken L." for "Ken Lee"), and it is
     /// not the same name.
     public static func isShortForm(_ short: String, of full: String) -> Bool {
         let words = { (s: String) in s.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init) }

@@ -46,7 +46,7 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
     #expect(try v.conversation(id).updated == Vault.iso(pinned), "a transcript write stamps updated")
 
     let notes = Notes(summary: "We met.", decisions: ["Ship it"], actions: [
-        ActionItem(text: "Send the deck", owner: "Sam Lee", due: "2026-06-20"),
+        ActionItem(text: "Send the deck", owner: "Ken Lee", due: "2026-06-20"),
         ActionItem(text: "Book a room", done: true),
     ])
     try v.writeNotes(notes, for: id)
@@ -55,7 +55,7 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
 
     #expect(try v.setTask(id, text: "Send the deck", done: true))
     #expect(v.notes(id).actions.map(\.done) == [true, true])
-    #expect(try read(v, id + "/notes.md").contains("- [x] Send the deck  <!-- owner: Sam Lee; due: 2026-06-20 -->"))
+    #expect(try read(v, id + "/notes.md").contains("- [x] Send the deck  <!-- owner: Ken Lee; due: 2026-06-20 -->"))
     #expect(try v.setTask(id, text: "Book a room", done: false))
     #expect(try !v.setTask(id, text: "Not a task", done: true))
     #expect(v.tasks().map(\.item.done) == [true, false])
@@ -103,8 +103,8 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
 @Test func linksCanonicalizeAndCreateStubNotes() throws {
     let v = try scratchVault(copyFixture: true)
     let id = "Work/Acme/2026-10-20-weekly-sync"
-    let meta = try v.setLinks(id, people: ["sammy", "Kim Park", "kim park", " Pat Doe "], accounts: ["acme"], tags: ["#Q4 Renewal", "Pricing", "pricing", "  "])
-    #expect(meta.people == ["Sam Lee", "Kim Park", "Pat Doe"])
+    let meta = try v.setLinks(id, people: ["kenny", "Kim Park", "kim park", " Pat Doe "], accounts: ["acme"], tags: ["#Q4 Renewal", "Pricing", "pricing", "  "])
+    #expect(meta.people == ["Ken Lee", "Kim Park", "Pat Doe"])
     #expect(meta.accounts == ["Acme Corp"])
     #expect(meta.tags == ["q4-renewal", "pricing"])
     #expect(meta.suggested.people.isEmpty, "Kim Park is linked now, so no longer suggested")
@@ -119,16 +119,16 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
     let v = try scratchVault(copyFixture: true)
     let id = "Work/Acme/2026-10-20-weekly-sync"
     var meta = try v.answerSuggestion(id, .person("kim park"), accept: true)
-    #expect(meta.people == ["Sam Lee", "Kim Park"])
+    #expect(meta.people == ["Ken Lee", "Kim Park"])
     #expect(meta.suggested.people.isEmpty)
     meta = try v.answerSuggestion(id, .tag("q4"), accept: false)
     #expect(meta.suggested.tags.isEmpty && meta.suggested.dismissed == ["Globex", "q4"])
     #expect(!meta.tags.contains("q4"))
 
-    // Suggest from the notes alone: the transcript says "Sammy" and "Acme".
+    // Suggest from the notes alone: the transcript says "Kenny" and "Acme".
     meta = try v.suggest(id, heard: Heard(people: ["Pat Doe"], companies: ["Acme"], topics: ["Renewal", "Pricing", "Q4", "Budget"]))
-    #expect(meta.suggested.people.isEmpty, "Sam and Kim are linked; Pat Doe is never said")
-    #expect(meta.suggested.accounts == ["Acme Corp"], "said as Acme, and Sam works there")
+    #expect(meta.suggested.people.isEmpty, "Ken and Kim are linked; Pat Doe is never said")
+    #expect(meta.suggested.accounts == ["Acme Corp"], "said as Acme, and Ken works there")
     #expect(meta.suggested.tags.isEmpty, "renewal and pricing are linked, q4 dismissed, and only three topics are read")
     #expect(meta.suggested.dismissed == ["Globex", "q4"])
 }
@@ -143,19 +143,19 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
     #expect(try v.conversation("Work/2026-10-22-hiring-chat").accounts == ["Globex Inc"])
     #expect(v.entities().first { $0.name == "Kim Park" }?.account == "Globex Inc", "a person's account follows")
 
-    var sam = v.entities().first { $0.name == "Sam Lee" }!
-    sam.name = "Samuel Lee"
-    try v.saveEntity(sam, renamingFrom: "Sam Lee")
-    #expect(try v.conversation("Work/Acme/2026-10-20-weekly-sync").people == ["Samuel Lee"])
-    #expect(EntityIndex(v.entities()).canonical(.person, "Sammy") == "Samuel Lee", "aliases travel with the note")
+    var ken = v.entities().first { $0.name == "Ken Lee" }!
+    ken.name = "Kenneth Lee"
+    try v.saveEntity(ken, renamingFrom: "Ken Lee")
+    #expect(try v.conversation("Work/Acme/2026-10-20-weekly-sync").people == ["Kenneth Lee"])
+    #expect(EntityIndex(v.entities()).canonical(.person, "Kenny") == "Kenneth Lee", "aliases travel with the note")
 
-    sam.name = "samuel lee"
-    try v.saveEntity(sam, renamingFrom: "Samuel Lee")
-    #expect(v.entities().contains { $0.name == "samuel lee" }, "a case-only rename works on a case-insensitive disk")
+    ken.name = "kenneth lee"
+    try v.saveEntity(ken, renamingFrom: "Kenneth Lee")
+    #expect(v.entities().contains { $0.name == "kenneth lee" }, "a case-only rename works on a case-insensitive disk")
 
     var clash = Entity(kind: .person, name: "Kim Park")
     clash.body = "x"
-    #expect(throws: VaultError.self) { try v.saveEntity(clash, renamingFrom: "samuel lee") }
+    #expect(throws: VaultError.self) { try v.saveEntity(clash, renamingFrom: "kenneth lee") }
     #expect(throws: VaultError.self) { try v.saveEntity(Entity(kind: .person, name: " .. ")) }
 
     var pat = Entity(kind: .person, name: "Pat Doe")
@@ -167,53 +167,53 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
 }
 
 @Test func suggestionsPortOfMemosa() {
-    var sam = Entity(kind: .person, name: "Sam Lee")
-    sam.account = "Acme"
-    let notes = [sam, Entity(kind: .account, name: "Acme")]
+    var ken = Entity(kind: .person, name: "Ken Lee")
+    ken.account = "Acme"
+    let notes = [ken, Entity(kind: .account, name: "Acme")]
     let ix = EntityIndex(notes)
     var meta = Conversation(id: "Work/c", title: "Weekly sync", created: "2026-10-25T00:00:00Z")
     meta.suggested.dismissed = ["Globex"]
     let heard = Heard(people: ["Kim Park", "Made Up Person"], companies: ["Globex"], topics: ["Pricing", "q4 renewal", "a", "b"])
-    var s = Vault.suggestions(meta, text: "Sam Lee and Kim Park talked about Globex pricing.", entities: notes, index: ix, heard: heard)
-    #expect(s.people == ["Sam Lee", "Kim Park"], "known name found, AI name kept only if said")
-    #expect(s.accounts == ["Acme"], "Sam brings Acme; dismissed Globex stays gone")
+    var s = Vault.suggestions(meta, text: "Ken Lee and Kim Park talked about Globex pricing.", entities: notes, index: ix, heard: heard)
+    #expect(s.people == ["Ken Lee", "Kim Park"], "known name found, AI name kept only if said")
+    #expect(s.accounts == ["Acme"], "Ken brings Acme; dismissed Globex stays gone")
     #expect(s.tags == ["pricing", "q4-renewal", "a"])
 
-    meta.people = ["Sam Lee"]
-    s = Vault.suggestions(meta, text: "Sam Lee again.", entities: notes, index: ix, heard: Heard())
+    meta.people = ["Ken Lee"]
+    s = Vault.suggestions(meta, text: "Ken Lee again.", entities: notes, index: ix, heard: Heard())
     #expect(s.people.isEmpty, "already linked is not suggested")
     #expect(s.accounts == ["Acme"])
 }
 
 @Test func firstNamesAreNotSecondPeople() {
-    let notes = [Entity(kind: .person, name: "Sam Lee")]
+    let notes = [Entity(kind: .person, name: "Ken Lee")]
     let ix = EntityIndex(notes)
     var meta = Conversation(id: "Work/c", title: "Sync", created: "2026-10-25T00:00:00Z")
-    let text = "Sam Lee joined. Sam said Kim would call. Kim Park agreed."
-    var s = Vault.suggestions(meta, text: text, entities: notes, index: ix, heard: Heard(people: ["Sam", "Kim", "Kim Park"]))
-    #expect(s.people == ["Sam Lee", "Kim Park"], "Sam and Kim are short for people already suggested")
+    let text = "Ken Lee joined. Ken said Kim would call. Kim Park agreed."
+    var s = Vault.suggestions(meta, text: text, entities: notes, index: ix, heard: Heard(people: ["Ken", "Kim", "Kim Park"]))
+    #expect(s.people == ["Ken Lee", "Kim Park"], "Ken and Kim are short for people already suggested")
     s = Vault.suggestions(meta, text: text, entities: [], index: EntityIndex([]), heard: Heard(people: ["Kim", "Kim Park"]))
     #expect(s.people == ["Kim Park"], "a first name heard before the full name is dropped too")
-    meta.people = ["Sam Lee"]
-    s = Vault.suggestions(meta, text: text, entities: notes, index: ix, heard: Heard(people: ["Sam"]))
-    #expect(s.people.isEmpty, "Sam next to a linked Sam Lee is not suggested")
+    meta.people = ["Ken Lee"]
+    s = Vault.suggestions(meta, text: text, entities: notes, index: ix, heard: Heard(people: ["Ken"]))
+    #expect(s.people.isEmpty, "Ken next to a linked Ken Lee is not suggested")
 
-    #expect(Entity.isShortForm("Sam", of: "Sam Lee"))
-    #expect(Entity.isShortForm("sam l.", of: "Sam Lee"))
-    #expect(!Entity.isShortForm("Sam Lee", of: "Sam Lee"))
-    #expect(!Entity.isShortForm("Lee", of: "Sam Lee"))
-    #expect(!Entity.isShortForm("Sam Lee Park", of: "Sam Lee"))
-    #expect(Entity.fullName("Sam", among: ["Sam Lee", "Kim Park"]) == "Sam Lee")
-    #expect(Entity.fullName("Sam", among: ["Sam Lee", "Sam Ortiz"]) == "Sam", "two Sams: left as said")
-    #expect(Entity.fullName("Pat", among: ["Sam Lee"]) == "Pat")
+    #expect(Entity.isShortForm("Ken", of: "Ken Lee"))
+    #expect(Entity.isShortForm("ken l.", of: "Ken Lee"))
+    #expect(!Entity.isShortForm("Ken Lee", of: "Ken Lee"))
+    #expect(!Entity.isShortForm("Lee", of: "Ken Lee"))
+    #expect(!Entity.isShortForm("Ken Lee Park", of: "Ken Lee"))
+    #expect(Entity.fullName("Ken", among: ["Ken Lee", "Kim Park"]) == "Ken Lee")
+    #expect(Entity.fullName("Ken", among: ["Ken Lee", "Ken Ortiz"]) == "Ken", "two Kens: left as said")
+    #expect(Entity.fullName("Pat", among: ["Ken Lee"]) == "Pat")
 }
 
 @Test func tidyAndMentions() {
     #expect(tidyTags(["#Pricing", "Q4 renewal", "pricing"]) == ["pricing", "q4-renewal"])
-    #expect(mentions("we spoke to sam lee today", "sam lee"))
-    #expect(mentions("sam.", "sam"))
-    #expect(!mentions("samsung phones", "sam"), "whole words only")
-    #expect(mentions("samsung and sam", "sam"), "a later whole-word hit still counts")
+    #expect(mentions("we spoke to ken lee today", "ken lee"))
+    #expect(mentions("ken.", "ken"))
+    #expect(!mentions("kennel doors", "ken"), "whole words only")
+    #expect(mentions("kennel and ken", "ken"), "a later whole-word hit still counts")
     #expect(!mentions("a b c", "a"), "one letter never matches")
     #expect(Entity.cleanName(" ../a/b ") == "-a-b")
 }
@@ -224,11 +224,11 @@ func read(_ v: Vault, _ rel: String) throws -> String { try String(contentsOf: v
         ActionItem(text: "Request inventory", done: true, owner: "Kim Park"),
         ActionItem(text: "Call back"),
     ])
-    #expect(n.rendered(title: "Acme review", date: "2026-06-17", people: ["Kim Park", "Sam Lee"], tags: ["insurance"]) == """
+    #expect(n.rendered(title: "Acme review", date: "2026-06-17", people: ["Kim Park", "Ken Lee"], tags: ["insurance"]) == """
     ---
     title: Acme review
     date: 2026-06-17
-    people: [Kim Park, Sam Lee]
+    people: [Kim Park, Ken Lee]
     tags: [insurance]
     ---
 

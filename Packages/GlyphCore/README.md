@@ -21,6 +21,19 @@ Swift 6, macOS 26 (GlyphVault also builds for iOS 26).
 .product(name: "GlyphVault", package: "GlyphCore"),
 ```
 
+## On a Mac: the app agents for shells and MCP
+
+```sh
+glyphcore-report agents                        # every agent, its tools, their JSON argument schemas
+glyphcore-report run well log_entry '{"text":"Rice and beans","kind":"food","minutesAgo":0}' [--vault <path>]
+glyphcore-report undo '<the undo object of a result>' [--vault <path>]
+```
+
+`run` calls the same tool the iPhone driver gives that agent and writes into the vault (`--vault`, else
+`GLYPH_VAULT`) what the hub would write (GlyphAI `MacHub`: every route the agents use, kept in step with
+the hub). `undo` takes one result back the way the app's Undo does (archive moves, never a delete).
+Time's tools only queue a request: they report `waiting`.
+
 ## Rules it keeps
 
 - **Disk always wins.** Nothing is cached; every write reads the file first. Files may be
@@ -45,7 +58,7 @@ try vault.ensure()
 var meta = try vault.createConversation(in: "Work/Acme", title: "Weekly sync")
 try vault.writeTranscript(transcript, for: meta.id)        // + transcript.txt
 try vault.writeNotes(Notes(summary: "…", decisions: ["…"],
-    actions: [ActionItem(text: "Send the order form", owner: "Sam Lee", due: "2026-10-24")]), for: meta.id)
+    actions: [ActionItem(text: "Send the order form", owner: "Ken Lee", due: "2026-10-24")]), for: meta.id)
 try vault.setTask(meta.id, text: "Send the order form", done: true)
 
 meta.durationSec = 1_820
@@ -57,16 +70,16 @@ try vault.createFolder("Home/Kitchen")
 
 // Links: names resolve through aliases, tags are tidied (#Q4 Renewal -> q4-renewal),
 // a new name gets a stub note in People/ or Accounts/.
-try vault.setLinks(id, people: ["Sammy", "Kim Park"], accounts: ["acme"], tags: ["#Q4 Renewal"])
+try vault.setLinks(id, people: ["Kenny", "Kim Park"], accounts: ["acme"], tags: ["#Q4 Renewal"])
 try vault.answerSuggestion(id, .person("Kim Park"), accept: true)
 try vault.answerSuggestion(id, .tag("budget"), accept: false)   // remembered in dismissed
 
 // People and Accounts. Renaming rewrites the name in every meta.json and in people's account.
-var sam = Entity(kind: .person, name: "Sam Lee")
-sam.account = "Acme Corp"; sam.aliases = ["Sammy"]
-try vault.saveEntity(sam)
-sam.name = "Samuel Lee"
-try vault.saveEntity(sam, renamingFrom: "Sam Lee")
+var ken = Entity(kind: .person, name: "Ken Lee")
+ken.account = "Acme Corp"; ken.aliases = ["Kenny"]
+try vault.saveEntity(ken)
+ken.name = "Kenneth Lee"
+try vault.saveEntity(ken, renamingFrom: "Ken Lee")
 
 // Reading
 vault.tree()                                  // domains > folders > conversations
@@ -95,7 +108,7 @@ List(library.conversations, id: \.id) { Text($0.title) }
 
 library.tree; library.directory; library.tasks; library.generation
 let hits = await library.search("deposit")
-let withSam = await library.conversations(linkedTo: .person("Sam Lee"))
+let withKen = await library.conversations(linkedTo: .person("Ken Lee"))
 ```
 
 Writes go through `library.vault`; the watcher picks them up (or call `reload()`).
@@ -193,6 +206,24 @@ swift build --product glyphcore-report
 MEMOSA_VAULT=<vault> cargo run -q --example vault_report -- acme deposit "Hold the price"
 ```
 
+Filing documents (`glyphcore-report file`, GlyphAI `Filer`): one PDF or photo into the vault, named,
+placed, noted and linked. Read, OCR, classify, extract (dates and money by code; the on-device model
+only labels, and only what the text backs), decide, write, link, update, log; below the bar it waits in
+`data/apps/filing/review/`. Personal rules live in the vault's `data/apps/filing/rules.json`, never here.
+
+```sh
+swift build -c release --product glyphcore-report
+.build/release/glyphcore-report file ~/Downloads/statement.pdf --from billing@example.com --dry-run --json
+```
+
 A format change on purpose: update docs/vault-format.md and CHANGELOG.md (a major version
 if old files no longer read), then `GLYPH_WRITE_GOLDEN=1 swift test --filter contract` and
 review the golden diff.
+
+## Dictate first (GlyphCapture)
+
+Every text input in a Glyph app offers the mic: tap, talk, tap to stop; words appear as you speak,
+on the device. `TextField(...).dictatable($text)`, or `DictateButton(text: $text, onFinal: {...})`,
+or `DictateButton { words in ... }` to fill a form from what was said. AppKit:
+`DictateButton.hostingView { words in ... }` or `LiveDictation` with `onText`/`onFinal`.
+Tests inject the words with `GLYPH_DICTATION_TEXT`.
