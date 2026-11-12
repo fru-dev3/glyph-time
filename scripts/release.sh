@@ -35,15 +35,15 @@ echo "notarizing (a few minutes)"
 id=$(xcrun notarytool submit "$dmg" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" | awk '/^ *id:/ && !s {print $2; s=1}')
 [[ -n $id ]] || { echo "notarize: no submission id"; exit 1; }
 echo "submission $id"
-status=""
+nstate=""
 for _ in {1..90}; do
-  status=$(xcrun notarytool info "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" 2>&1 | awk '/^ *status:/ && !s {print $2; s=1}')
-  [[ $status == Accepted || $status == Invalid || $status == Rejected ]] && break
+  nstate=$(xcrun notarytool info "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" 2>&1 | awk '/^ *status:/ && !s {print $2; s=1}')
+  [[ $nstate == Accepted || $nstate == Invalid || $nstate == Rejected ]] && break
   sleep 30
 done
-if [[ $status != Accepted ]]; then
+if [[ $nstate != Accepted ]]; then
   xcrun notarytool log "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
-  echo "notarization was not accepted (status: ${status:-none})"; exit 1
+  echo "notarization was not accepted (status: ${nstate:-none})"; exit 1
 fi
 xcrun stapler staple "$dmg"
 xcrun stapler validate "$dmg"
