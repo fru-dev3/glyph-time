@@ -32,12 +32,12 @@ codesign --sign "$identity" --timestamp "$dmg"
 echo "notarizing (a few minutes)"
 # Submit, then poll: --wait has hung on Apple's side for an hour. A hung submission can be
 # resubmitted by running this again.
-id=$(xcrun notarytool submit "$dmg" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" | awk '/^ *id:/{print $2; exit}')
+id=$(xcrun notarytool submit "$dmg" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" | awk '/^ *id:/ && !s {print $2; s=1}')
 [[ -n $id ]] || { echo "notarize: no submission id"; exit 1; }
 echo "submission $id"
 status=""
 for _ in {1..90}; do
-  status=$(xcrun notarytool info "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" 2>&1 | awk '/^ *status:/{print $2; exit}')
+  status=$(xcrun notarytool info "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" 2>&1 | awk '/^ *status:/ && !s {print $2; s=1}')
   [[ $status == Accepted || $status == Invalid || $status == Rejected ]] && break
   sleep 30
 done
