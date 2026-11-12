@@ -15,8 +15,8 @@ public struct Conversation: Codable, Equatable, Sendable {
     public var people: [String] = []
     public var accounts: [String] = []
     public var tags: [String] = []
-    /// Glyph Studio objects this capture is filed under, by id: `person/<slug>`, `org/<slug>`
-    /// (a Product), `mission/<slug>` (a Project) or `domain/<slug>`. Left out of meta.json when
+    /// Glyph Bot objects this capture is filed under, by id: `person/<slug>`, `org/<slug>`
+    /// (an Org), `mission/<slug>` (a Project) or `domain/<slug>`. Left out of meta.json when
     /// empty. `people` and `accounts` are the names older vaults used; they move here.
     public var links: [String] = []
     /// Guesses waiting for a yes; they count for nothing until confirmed.
@@ -104,7 +104,7 @@ public struct Jot: Codable, Equatable, Sendable {
 }
 
 public struct Suggested: Codable, Equatable, Sendable {
-    /// Glyph Studio objects the call names, by id.
+    /// Glyph Bot objects the call names, by id.
     public var links: [String] = []
     /// Names said in the call with no Studio page yet (a yes makes one).
     public var people: [String] = []
@@ -323,7 +323,7 @@ public struct Notes: Equatable, Sendable {
     }
 }
 
-/// What a capture links to: a Glyph Studio object by id (`object`), a topic tag, or a name
+/// What a capture links to: a Glyph Bot object by id (`object`), a topic tag, or a name
 /// with no Studio page yet (`person`, a suggestion). `account` is the older vault's name list.
 public enum Link: Hashable, Sendable {
     case person(String), account(String), tag(String), object(String)

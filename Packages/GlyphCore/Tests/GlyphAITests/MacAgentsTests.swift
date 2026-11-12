@@ -88,8 +88,8 @@ private func text(_ vault: URL, _ rel: String) -> String? { try? String(contents
     for _ in 0..<2 { _ = try await GlyphAgent.crm.call("propose", json: #"{"kind":"org","name":"Acme","note":"Ken Lee works there"}"#, hub: hub) }
     let rel = "data/apps/crm/proposals/2026-10.jsonl"
     #expect(text(vault, rel)?.split(separator: "\n").count == 1, "said twice, suggested once")
-    #expect(text(vault, rel)?.contains(#""status":"pending""#) == true && text(vault, rel)?.contains(#""kind":"product""#) == true, "an org is CRM's product")
-    #expect(await hub.undo(.crmReject(id: CRMProposalLine.id(kind: "product", name: "Acme"), file: rel)))
+    #expect(text(vault, rel)?.contains(#""status":"pending""#) == true && text(vault, rel)?.contains(#""kind":"org""#) == true, "an org is filed as org")
+    #expect(await hub.undo(.crmReject(id: CRMProposalLine.id(kind: "org", name: "Acme"), file: rel)))
     #expect(text(vault, rel)?.contains(#""status":"rejected""#) == true)
 }
 
@@ -292,7 +292,7 @@ private func sha(_ s: String) -> String { Filing.sha256(Data(s.utf8)) }
 
     let places = CrossLink.places(in: vault)
     #expect(places.contains { $0.kind == "application" && $0.label == "Acme field engineer" })
-    #expect(places.contains { $0.kind == "product" && $0.label == "Acme" })
+    #expect(places.contains { $0.kind == "org" && $0.label == "Acme" })
     #expect(places.contains { $0.label == "Sayings" })
     #expect(CrossLink.match("Acme application", in: places)?.kind == "application")
     #expect(CrossLink.match("sayings", in: places)?.path == "data/domains/content/source/sayings")

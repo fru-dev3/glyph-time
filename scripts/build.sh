@@ -17,8 +17,8 @@ if pmset -g batt 2>/dev/null | grep -q InternalBattery && [[ -z ${GLYPH_UI_HOST:
 fi
 cd "$(dirname "$0")/.."
 
-VERSION=0.1.20
-BUILD=20
+VERSION=0.1.23
+BUILD=23
 
 [[ -d /Applications/Xcode.app ]] && export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} # the on-device model's macros
 swift build -c release --product GlyphTime
@@ -27,6 +27,17 @@ APP="build/Glyph Time.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/GlyphTime "$APP/Contents/MacOS/GlyphTime"
+# A public (Developer ID) build must not carry source paths: debug info and symbols hold every
+# file's absolute path, and SwiftPM bakes in a dependency's resource-bundle build path.
+if [[ ${SIGN_IDENTITY:-} == "Developer ID Application"* ]]; then
+  strip -S -x "$APP/Contents/MacOS/GlyphTime" 2>/dev/null || true
+  python3 - "$APP/Contents/MacOS/GlyphTime" <<'PY'
+import re, sys
+p = sys.argv[1]; b = open(p, "rb").read()
+b = re.sub(rb"/Use[r]s/[ -~]*?\.bundle", lambda m: (b"/nonexistent" + b"/" * len(m.group(0)))[:len(m.group(0))], b)
+open(p, "wb").write(b)
+PY
+fi
 [[ -f assets/AppIcon.icns ]] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp assets/MenuBar.png assets/MenuBar@2x.png "$APP/Contents/Resources/"
 

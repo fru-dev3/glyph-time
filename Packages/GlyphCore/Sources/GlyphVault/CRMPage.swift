@@ -1,24 +1,25 @@
 import Foundation
 
 // Glyph CRM's entity page (moved from CRMKit 2026-10-30 so app agents write the same bytes; CRMKit aliases these
-// as Page, Kind and Link). The page format is a contract with Glyph Studio's engine: run CRM/scripts/engine-roundtrip.sh
+// as Page, Kind and Link). The page format is a contract with Glyph Bot's engine: run CRM/scripts/engine-roundtrip.sh
 // after any change here.
 
-/// The four kinds of entity. Storage is Glyph Studio's: `data/entities/<dir>/<slug>/entity.md`,
-/// id `<prefix>/<slug>`. Products keep the `orgs` folder and the `org/` prefix so every app and
-/// agent that already reads them keeps working.
+/// The four kinds of entity. Storage is Glyph Bot's: `data/entities/<dir>/<slug>/entity.md`,
+/// id `<prefix>/<slug>`. Orgs were spelled `product` in the Swift until 2026-11-09 (Fru: "use orgs
+/// instead of products. standardize once adn for all"). The folder and the prefix were `orgs` and
+/// `org/` all along, so the name now matches what is on disk and not one page moves.
 public enum CRMKind: String, CaseIterable, Codable, Sendable, Identifiable {
-    case person, place, product, thing, event
+    case person, place, org, thing, event
     public var id: String { rawValue }
-    /// The four Entities; Events sit under Activities with Projects, as in Glyph Studio.
-    public static let entities: [CRMKind] = [.person, .place, .product, .thing]
+    /// The four Entities; Events sit under Activities with Projects, as in Glyph Bot.
+    public static let entities: [CRMKind] = [.person, .place, .org, .thing]
 
-    public var prefix: String { self == .product ? "org" : rawValue }
+    public var prefix: String { rawValue }
     public var dir: String {
         switch self {
         case .person: "people"
         case .place: "places"
-        case .product: "orgs"
+        case .org: "orgs"
         case .thing: "things"
         case .event: "events"
         }
@@ -27,7 +28,7 @@ public enum CRMKind: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .person: "People"
         case .place: "Places"
-        case .product: "Products"
+        case .org: "Orgs"
         case .thing: "Things"
         case .event: "Events"
         }
@@ -36,7 +37,7 @@ public enum CRMKind: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .person: "Person"
         case .place: "Place"
-        case .product: "Product"
+        case .org: "Org"
         case .thing: "Thing"
         case .event: "Event"
         }
@@ -45,13 +46,27 @@ public enum CRMKind: String, CaseIterable, Codable, Sendable, Identifiable {
         switch self {
         case .person: "person.2"
         case .place: "mappin.and.ellipse"
-        case .product: "shippingbox"
+        case .org: "building.2"
         case .thing: "applewatch"
         case .event: "calendar"
         }
     }
+    /// Rows written before the rename say "product". Decoding goes through the raw value, not
+    /// through `init?(prefix:)`, so it has to be read here or every proposal and merge already on
+    /// disk stops decoding the day this ships.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let k = CRMKind(rawValue: raw == "product" ? "org" : raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "no CRM kind called \(raw)"))
+        }
+        self = k
+    }
+
+    /// "product" is still read, so a page, a plan or a caller written before the rename lands.
     public init?(prefix: String) {
-        guard let k = CRMKind.allCases.first(where: { $0.prefix == prefix || $0.dir == prefix }) else { return nil }
+        let p = prefix == "product" || prefix == "products" ? "org" : prefix
+        guard let k = CRMKind.allCases.first(where: { $0.prefix == p || $0.dir == p }) else { return nil }
         self = k
     }
 }
@@ -67,7 +82,7 @@ public struct CRMLink: Hashable, Codable, Sendable {
     }
 }
 
-/// One entity page, read and written exactly the way Glyph Studio's engine does
+/// One entity page, read and written exactly the way Glyph Bot's engine does
 /// (`renderPage` in its entities.ts), so either can write it and neither loses the other's
 /// work. Unknown front matter keys are kept verbatim and in order. Glyph CRM adds two, both
 /// single-line JSON (the engine keeps unknown keys only while they stay on one line):
@@ -317,7 +332,7 @@ public struct CRMPage: Equatable, Sendable {
         return f.string(from: d)
     }
 
-    /// Glyph Studio's slug: lower case ASCII letters and digits, anything else one `-`.
+    /// Glyph Bot's slug: lower case ASCII letters and digits, anything else one `-`.
     public static func slug(_ name: String) -> String {
         let mapped = name.lowercased().map { ($0.isASCII && ($0.isLetter || $0.isNumber)) ? $0 : "-" }
         return String(mapped).split(separator: "-").joined(separator: "-")

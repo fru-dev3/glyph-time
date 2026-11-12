@@ -33,7 +33,7 @@ public enum ReachState: String, Sendable, CaseIterable {
     public var reachable: Bool { self == .open || self == .needsYou || self == .failing }
 }
 
-/// What one connector definition says about itself, as the Glyph Studio engine reports it
+/// What one connector definition says about itself, as the Glyph Bot engine reports it
 /// (`prevail connectors list --json`). Only the fields the state needs; nil when there is no
 /// connector for that app at all, which is the usual case.
 public struct ConnectorHealth: Equatable, Sendable {

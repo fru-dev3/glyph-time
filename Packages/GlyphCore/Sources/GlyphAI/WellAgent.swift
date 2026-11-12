@@ -6,7 +6,10 @@ import GlyphVault
 /// file (Glyph Well on this phone pulls them in and lists them).
 extension GlyphAgent {
     public static let well = GlyphAgent(
-        id: "well", name: "Well", color: "C2405A",
+        // Office green, the app's own accent. It was a crimson rose, which on a green app read
+        // as alien and sat a shade away from the one red this family keeps for a running mic.
+        // An agent's face is its app's face; Well's is a leaf on green.
+        id: "well", name: "Well", color: "008000",
         instructions: "You are Glyph Well's agent. Log each food or drink, symptom, mood or sleep in the job with log_entry, one call each, named in 1 to 4 of the person's words.",
         tools: { hub, ledger in [WellLogEntry(hub: hub, ledger: ledger)] },
         fallback: { job, hub in await hub.logWell(kind: job.kind, name: job.name.isEmpty ? job.instruction : job.name, said: job.instruction, at: hub.now()) })

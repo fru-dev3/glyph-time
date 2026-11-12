@@ -183,10 +183,72 @@ final class Clock {
 
     private var seconds = 0
 
+    /// Requests this Mac has already acted on, so a line is never obeyed twice.
+    private var answered: Set<String> = []
+
+    /// Reads a request's `ts` (GlyphVault's `localStamp`).
+    private static let stamp: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+
+    /// What Glyph Native asked of the timer, from anywhere.
+    ///
+    /// Fru, 2026-11-11, with the Now card's Pause and Stop doing nothing to a timer running on
+    /// this Mac: "buttons don't work". They were reaching the vault — the lines were there, with
+    /// the right commands and the right times — and nothing on this Mac ever read them. The phone
+    /// has polled this queue since October; the Mac never has, so a command from the phone could
+    /// only ever reach a timer the phone itself was running.
+    ///
+    /// Read straight from the vault rather than over HTTP, because this app already has the vault
+    /// open and writes its own sessions there: the hub drops each request into the same folder.
+    private func takeRequests() {
+        guard !UITest.on, let vault = Store.vault else { return }
+        let folder = vault.appending(path: "data/apps/time")
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in files where name.hasPrefix("requests.") && name.hasSuffix(".jsonl") {
+            guard let text = try? String(contentsOf: folder.appending(path: name), encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n") {
+                guard let r = try? JSONDecoder().decode(TimeRequest.self, from: Data(line.utf8)),
+                      r.event == "request", let command = r.command?.lowercased(),
+                      !answered.contains(r.id) else { continue }
+                // Only the three a running clock can obey. Anything else is the driver's business
+                // (alarms, reminders) and the phone's Time answers those as it always has.
+                let act: () -> Void
+                if command.contains("pause") { act = { self.pause(reason: "asked") } }
+                else if command.contains("resume") || command.contains("continue") { act = { self.resume() } }
+                else if command.contains("stop") || command.contains("end") { act = { self.stop() } }
+                else { continue }
+                answered.insert(r.id)
+                guard let open = session else { continue }   // nothing running here: leave it for whoever has it
+                // A command is about the timer that was running when it was tapped. This queue
+                // held 23 unanswered pauses and a stop from hours earlier, and the first timer
+                // started after that was paused and stopped two seconds later by them, which
+                // reads as the clock broken rather than obeyed. A line sent before this session
+                // began belongs to one that is already over.
+                guard let sent = Self.stamp.date(from: r.ts), sent >= open.start else { continue }
+                act()
+                let taken = TimeRequest(id: r.id, event: "taken", kind: r.kind, text: "Glyph Time on this Mac")
+                if let d = try? JSONEncoder().encode(taken) {
+                    var body = d
+                    body.append(0x0A)
+                    let answers = folder.appending(path: "requests.\(Store.host).jsonl")
+                    if let h = try? FileHandle(forWritingTo: answers) {
+                        h.seekToEndOfFile(); h.write(body); try? h.close()
+                    } else {
+                        try? body.write(to: answers)
+                    }
+                }
+            }
+        }
+    }
+
     private func second() {
         now = .now
         seconds += 1
         if seconds % 5 == 0 { Watch.checkIdle() }
+        // Every two seconds while something runs: fast enough that a tap on the phone feels
+        // immediate, slow enough that it is a directory read and not a spin.
+        if seconds % 2 == 0 { takeRequests() }
         guard running else { return }
         chime()
         guard nudge == nil else { return }
@@ -206,6 +268,7 @@ final class Clock {
     /// A countdown's end rings, always (it was asked for), every 5 seconds for up to a minute
     /// while "Time is up" is still showing.
     private func ring() {
+        guard !UITest.on else { return } // the check asserts the words, never the sound
         Task { @MainActor in
             for _ in 0..<12 {
                 guard nudge?.hasPrefix("Time is up") == true else { return }

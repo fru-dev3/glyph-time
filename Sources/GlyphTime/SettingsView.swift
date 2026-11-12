@@ -41,6 +41,50 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             Section {
+                LabeledContent("Vault") {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(Store.connected ? "Connected" : "None: not a Glyph Bot vault")
+                        if let at = Store.lastWrite {
+                            // Always past tense. `.relative` reads "in 0 seconds" for a line written
+                            // a moment ago, which is both the wrong direction and a strange way to
+                            // say "just now".
+                            let ago = Date.now.timeIntervalSince(at)
+                            Text(ago < 60 ? "Written just now" : "Written \(TimeLog.span(ago)) ago")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                LabeledContent("Sessions") {
+                    Text(Store.folder.path(percentEncoded: false))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Project notes") {
+                    Text(MacHistory.notesFolder.path(percentEncoded: false))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                LabeledContent("Exports") {
+                    Text(MacHistory.exportsFolder.path(percentEncoded: false))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                LabeledContent("Waiting to fold in") {
+                    Text("\(Store.waiting)").monospacedDigit().foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Choose Folder...") { choose() }
+                    if !folder.isEmpty { Button("Use the Default") { folder = "" } }
+                    Spacer()
+                    Button("Show in Finder") { NSWorkspace.shared.open(Store.folder) }
+                }
+            } footer: {
+                Text("Plain files, one line per start, pause and stop; History's project notes and exports sit beside them. The vault is the one in Glyph Bot's config unless you choose a folder.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Nudge every", selection: $nudge) {
                     Text("Never").tag(0)
                     ForEach([15, 30, 45, 60, 90], id: \.self) { Text("\($0) minutes").tag($0) }
@@ -73,35 +117,6 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("For the Recent list. Right-click a project on the clock, or hold Option in the menu, to hide it. Hidden projects keep their sessions and come back when you start them again.")
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                LabeledContent("Vault") {
-                    Text(Store.vault?.path(percentEncoded: false) ?? "None: not a Glyph Studio vault")
-                        .lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                LabeledContent("Sessions") {
-                    Text(Store.folder.path(percentEncoded: false))
-                        .lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                LabeledContent("Project notes") {
-                    Text(MacHistory.notesFolder.path(percentEncoded: false)).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary).textSelection(.enabled)
-                }
-                LabeledContent("Exports") {
-                    Text(MacHistory.exportsFolder.path(percentEncoded: false)).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary).textSelection(.enabled)
-                }
-                HStack {
-                    Button("Choose Folder...") { choose() }
-                    if !folder.isEmpty { Button("Use the Default") { folder = "" } }
-                    Spacer()
-                    Button("Show in Finder") { NSWorkspace.shared.open(Store.folder) }
-                }
-            } footer: {
-                Text("Plain files, one line per start, pause and stop; History's project notes and exports sit beside them. The vault is the one in Glyph Studio's config unless you choose a folder.")
                     .foregroundStyle(.secondary)
             }
             Section {
@@ -262,7 +277,7 @@ struct SettingsView: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Use This Folder"
-        panel.message = "Where Glyph Time keeps your sessions. A Glyph Studio vault, a notes folder, anywhere."
+        panel.message = "Where Glyph Time keeps your sessions. A Glyph Bot vault, a notes folder, anywhere."
         if panel.runModal() == .OK, let url = panel.url {
             folder = url.path(percentEncoded: false)
             Clock.shared.load()

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// An agent's face (moved from Glyph Studio to GlyphCapture on 2026-10-30, so every Glyph app's agents share it): two white eyes and a mouth on the agent's tile, alive the way a character is
+/// An agent's face (moved from Glyph Bot to GlyphCapture on 2026-10-30, so every Glyph app's agents share it): two white eyes and a mouth on the agent's tile, alive the way a character is
 /// (Grok's companions, Duolingo's Lily, Brilliant's Koji): it blinks and breathes at rest, leans in
 /// while you type, glances away while it thinks, talks while the reply streams, tilts its head when it
 /// waits on you, hops once when something is saved, and droops when a turn fails. Every mood eases

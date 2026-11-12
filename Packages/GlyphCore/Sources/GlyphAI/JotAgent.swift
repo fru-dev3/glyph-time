@@ -27,10 +27,10 @@ public struct JotNewNote: Tool {
 /// Files a note to a place (an application folder, a CRM page, a project, a domain...) without moving it.
 public struct JotFileNote: Tool {
     public let name = "file_note"
-    public let description = "File a Glyph Jot note under a place: a company or job application, a person or product page, a project, a domain, or another place the vault lists. The note is not moved; the place links to it."
+    public let description = "File a Glyph Jot note under a place: a company or job application, a person or org page, a project, a domain, or another place the vault lists. The note is not moved; the place links to it."
     @Generable public struct Arguments {
         @Guide(description: "Which note: a few of its words or its file name. Empty for the latest note.") public var note: String
-        @Guide(description: "Where to file it, as said: a company, application, person, product, project or domain name.") public var place: String
+        @Guide(description: "Where to file it, as said: a company, application, person, org, project or domain name.") public var place: String
     }
     let hub: Hub, ledger: Ledger
     public func call(arguments a: Arguments) async throws -> String {

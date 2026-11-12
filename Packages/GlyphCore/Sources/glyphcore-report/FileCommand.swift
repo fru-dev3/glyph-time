@@ -12,6 +12,7 @@ enum FileCommand {
                glyphcore-report file --backfill <vault folder> [--in-place] [--report <vault path>] [--limit N]
                glyphcore-report file --accept <id> [--domain <d>] [--subject <s>] [--type <t>] [--json]
                glyphcore-report file --undo <id>
+               glyphcore-report file --expiring          (remake the Expiring list from the sidecars)
                glyphcore-report file <path> --text      (the words it reads, OCR included)
         common: [--vault <path>] [--no-model]
         exit: 0 filed or duplicate, 2 review, 1 error
@@ -31,6 +32,15 @@ enum FileCommand {
         if has("--text"), let path = a.first(where: { !$0.hasPrefix("--") }) {  // the words the filer reads, for checking it
             guard let read = try? await filer.read(URL(fileURLWithPath: (path as NSString).expandingTildeInPath)) else { return 1 }
             print(read.text)
+            return 0
+        }
+        if has("--expiring") {  // remake records/memory/expiring.md from the sidecars already on disk
+            do { try filer.filing.writeExpiring() } catch {
+                FileHandle.standardError.write(Data("\(error)\n".utf8)); return 1
+            }
+            let rows = filer.filing.expiring(), gaps = filer.filing.lapsed()
+            print("expiring: \(rows.count) in the next 12 months, \(gaps.count) lapsed with nothing newer filed"
+                  + " -> data/domains/records/memory/expiring.md")
             return 0
         }
         if let folder = value("--backfill") {

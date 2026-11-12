@@ -137,46 +137,44 @@ struct Squish: ButtonStyle {
 }
 
 public extension View {
-    /// The big talk button pinned bottom center (above a tab bar), over a fade of the background, as
-    /// in Glyph Jot. Scroll views inside (also inside a NavigationStack) get a bottom margin so their
-    /// last rows scroll clear of it, and it steps aside while the keyboard is up. `page` is the colour the
-    /// fade blends into: the screen's own background (a grouped or tinted page passes its colour, or a
-    /// lighter band shows behind the disc).
-    func talkButton(tint: Color = Color(red: 0, green: 128 / 255, blue: 0), caption: String = "Tap to talk", page: Color = .talkPage, onFinal: @escaping (String) -> Void) -> some View {
-        modifier(TalkButtonPlacement(tint: tint, caption: caption, page: page, onFinal: onFinal))
+    /// The family's composer pinned at the foot of the page (above a tab bar), as in Glyph Jot: a
+    /// `+`, a field, and a mic that becomes send. Scroll views inside (also inside a
+    /// NavigationStack) get a bottom margin so their last rows scroll clear of it, and it rides up
+    /// with the keyboard, because it is now the thing the keyboard is for. `page` is the colour the
+    /// row's ground uses: a grouped or tinted page passes its own, or a lighter band shows behind it.
+    func talkButton(tint: Color = Color(red: 0, green: 128 / 255, blue: 0),
+                    placeholder: String = "Say or type what happened",
+                    page: Color = .talkPage,
+                    attach: (() -> Void)? = nil,
+                    onFinal: @escaping @MainActor (String) async -> Void) -> some View {
+        modifier(TalkButtonPlacement(tint: tint, placeholder: placeholder, page: page, attach: attach, onFinal: onFinal))
     }
 }
 
-/// How tall the pinned button is, with its caption and fade, for the scroll margin.
-let talkButtonHeight: CGFloat = 196
+/// How tall the pinned composer is, for the scroll margin: the 44pt row with 4 above and below, 10
+/// on top and 6 under. Still 52, as it was when the discs were 34 in 9 of padding: the discs are
+/// tapped at 44 now and the padding came down by the same 5 each side, on purpose, so no page's
+/// scroll margin moved. It replaced the trio, which replaced the 196pt disc-and-caption.
+let composerHeight: CGFloat = (GlyphComposer.air - 3) + 52 + 6
 
 struct TalkButtonPlacement: ViewModifier {
-    let tint: Color, caption: String, page: Color, onFinal: (String) -> Void
-    @State private var keyboard = false
+    let tint: Color, placeholder: String, page: Color, attach: (() -> Void)?, onFinal: @MainActor (String) async -> Void
 
     func body(content: Content) -> some View {
         content
-            .contentMargins(.bottom, keyboard ? 0 : talkButtonHeight - 40, for: .scrollContent)
-            .overlay(alignment: .bottom) {
-                if !keyboard {
-                    TalkButton(tint: tint, caption: caption, onFinal: onFinal)
-                        .padding(.top, 24)
-                        .padding(.bottom, 4)
-                        .frame(maxWidth: .infinity)
-                        .background {
-                            LinearGradient(stops: [.init(color: page.opacity(0), location: 0), .init(color: page, location: 0.35)],
-                                           startPoint: .top, endPoint: .bottom)
-                                .ignoresSafeArea()
-                                .allowsHitTesting(false)  // the fade never takes a tap meant for what scrolls behind it
-                        }
-                        .transition(.opacity)
-                }
+            // `contentMargins` for the room: this modifier is applied outside the page's
+            // NavigationStack, and an inset attached out there never reaches the ScrollView in,
+            // but contentMargins does carry down to it and keeps the last row clear.
+            .contentMargins(.bottom, composerHeight, for: .scrollContent)
+            // A safeAreaInset for the placement, not an overlay. An overlay is laid out in its
+            // content's bounds and so stays where it is when the keyboard comes up: the keyboard
+            // then covers the very field you are typing into (Fru, 2026-11-09, on Glyph Well's
+            // Meds screen: "Why is the keyboard covering the input text? It's kind of silly").
+            // The safe area shrinks for the keyboard, so an inset rides up with it, which is how
+            // Glyph Time's composer has always behaved. The bar is the thing the keyboard is for.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                GlyphComposer(tint: tint, placeholder: placeholder, attach: attach, page: page) { words, _ in await onFinal(words) }
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
-            #if os(iOS)
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in withAnimation(.easeOut(duration: 0.2)) { keyboard = true } }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.easeOut(duration: 0.2)) { keyboard = false } }
-            #endif
     }
 }
 

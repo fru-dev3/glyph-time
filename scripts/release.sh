@@ -17,6 +17,8 @@ echo "building Glyph Time $version"
 SIGN_IDENTITY="$identity" ./scripts/build.sh
 app="build/Glyph Time.app"
 codesign --verify --strict --deep "$app"
+# A public build carries no source path (the user name, home folder).
+if strings -a "$app/Contents/MacOS/GlyphTime" | grep -q '^/Use[r]s/'; then echo "source paths left in the binary"; exit 1; fi
 sig=$(codesign -dvv "$app" 2>&1)
 [[ $sig == *"(runtime)"* ]] || { echo "not signed with the hardened runtime"; exit 1; }
 
@@ -28,12 +30,20 @@ hdiutil create -volname "Glyph Time $version" -srcfolder dist/stage -fs HFS+ -fo
 codesign --sign "$identity" --timestamp "$dmg"
 
 echo "notarizing (a few minutes)"
-result=$(xcrun notarytool submit "$dmg" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait --timeout 20m)
-echo "$result"
-if ! grep -q "status: Accepted" <<<"$result"; then
-  id=$(awk '/^ *id:/{print $2; exit}' <<<"$result")
-  xcrun notarytool log "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"
-  echo "notarization was not accepted (log above)"; exit 1
+# Submit, then poll: --wait has hung on Apple's side for an hour. A hung submission can be
+# resubmitted by running this again.
+id=$(xcrun notarytool submit "$dmg" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" | awk '/^ *id:/{print $2; exit}')
+[[ -n $id ]] || { echo "notarize: no submission id"; exit 1; }
+echo "submission $id"
+status=""
+for _ in {1..90}; do
+  status=$(xcrun notarytool info "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" 2>&1 | awk '/^ *status:/{print $2; exit}')
+  [[ $status == Accepted || $status == Invalid || $status == Rejected ]] && break
+  sleep 30
+done
+if [[ $status != Accepted ]]; then
+  xcrun notarytool log "$id" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
+  echo "notarization was not accepted (status: ${status:-none})"; exit 1
 fi
 xcrun stapler staple "$dmg"
 xcrun stapler validate "$dmg"

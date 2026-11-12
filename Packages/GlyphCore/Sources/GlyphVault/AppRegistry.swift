@@ -1,7 +1,7 @@
 import Foundation
 
 /// The vault's app registry: `data/apps/<folder>/manifest.json`, one folder per external system
-/// Fru's agents might reach. It already existed before Glyph Connect (Glyph Studio's engine
+/// Fru's agents might reach. It already existed before Glyph Connect (Glyph Bot's engine
 /// scaffolds it, `prevail connectors` runs it); Connect is a window onto it and the only app that
 /// edits which tools may be called.
 ///

@@ -166,29 +166,53 @@ public struct ChatEntry: Identifiable {
 /// fru-composing, chat-history.
 public struct GlyphChat: View {
     @Bindable var model: ChatModel
-    let face: Color
+    /// nil draws no face anywhere in the chat: no tile over the welcome and none beside an answer.
+    /// Fru, 2026-11-09, looking at Glyph CRM's chat on his phone: "I should'nt have any design like
+    /// this". An app that wants the mascot still passes a colour and is unchanged.
+    let face: Color?
     let tint: Color
     let agent: String
     let name: String
     let title: String
+    let subtitle: String?
     let examples: [String]
     let placeholder: String
     let caption: String
+    /// .center is the family's welcome, stacked down the middle. .leading is the CRM artboards,
+    /// which put the title and its line at the 20pt gutter with the conversation under them.
+    let align: HorizontalAlignment
+    /// An app's own top bar. It has to be insetted inside this NavigationStack: attached outside
+    /// it, the inset never reaches this ScrollView and the conversation scrolls up under the bar
+    /// (Fru, 2026-11-09, "Text is hidding", with a message half behind Glyph CRM's header).
+    let top: AnyView?
+    /// The composer's plus: what an app offers to attach. nil leaves it out.
+    let attach: (() -> Void)?
+    let attachLabel: String
+    /// nil keeps the family's composer (the talk button and its text row). An app that draws its
+    /// own bottom passes one here and is handed the two things only the chat can do: say these
+    /// words, and open the keyboard.
+    let bottom: ((@escaping (String) -> Void, @escaping () -> Void) -> AnyView)?
     @Environment(\.openURL) private var openURL
-    @State private var typing = false
-    @State private var draft = ""
     @State private var opened: Set<UUID> = []
     @State private var talking = false
     @State private var showHistory = false
-    @FocusState private var field: Bool
-    private var composing: Bool { talking || (typing && !draft.trimmingCharacters(in: .whitespaces).isEmpty) }
+    private var composing: Bool { talking }
 
     /// - face: the agent's tile colour; tint: bubbles, buttons, dots; agent: its id (the face's seed);
     ///   name: under the face ("Time"); title and examples: the welcome; placeholder: the text field's.
-    public init(model: ChatModel, face: Color, tint: Color, agent: String, name: String, title: String, examples: [String] = [],
-                placeholder: String, caption: String = "Tap to talk") {
+    public init(model: ChatModel, face: Color?, tint: Color, agent: String, name: String, title: String,
+                subtitle: String? = nil, examples: [String] = [],
+                placeholder: String, caption: String = "Tap to talk",
+                align: HorizontalAlignment = .center,
+                top: AnyView? = nil,
+                attach: (() -> Void)? = nil,
+                attachLabel: String = "Attach",
+                bottom: ((@escaping (String) -> Void, @escaping () -> Void) -> AnyView)? = nil) {
         self.model = model; self.face = face; self.tint = tint; self.agent = agent; self.name = name
-        self.title = title; self.examples = examples; self.placeholder = placeholder; self.caption = caption
+        self.title = title; self.subtitle = subtitle
+        self.examples = examples; self.placeholder = placeholder; self.caption = caption
+        self.align = align; self.top = top; self.bottom = bottom
+        self.attach = attach; self.attachLabel = attachLabel
     }
 
     public var body: some View {
@@ -213,6 +237,7 @@ public struct GlyphChat: View {
                 .onChange(of: composing) { _, on in if on { withAnimation { scroll.scrollTo("fru-dots", anchor: .bottom) } } }
             }
             .background(Color(uiColor: .systemBackground))
+            .safeAreaInset(edge: .top, spacing: 0) { if let top { top } }
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .toolbar(.hidden, for: .navigationBar)
             .task { await model.resend() }
@@ -223,13 +248,25 @@ public struct GlyphChat: View {
     }
 
     private var welcome: some View {
-        VStack(spacing: 18) {
-            FaceTile(color: face, size: 76, mood: composing ? .listening : .rest, seed: FaceMood.seed(agent))
-                .padding(.top, 48)
+        VStack(alignment: align, spacing: 18) {
+            if let face {
+                FaceTile(color: face, size: 76, mood: composing ? .listening : .rest, seed: FaceMood.seed(agent))
+                    .padding(.top, 48)
+            } else {
+                Color.clear.frame(height: 24)
+            }
+            // System sans, which is the family's type token. The rounded face was drawn to go with
+            // the mascot tile, and reads as a toy without it.
             Text(title)
-                .font(.system(size: 30, weight: .bold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
+                .font(.system(size: 32, weight: .bold)).kerning(-0.7).lineLimit(1).minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, alignment: edge)
                 .accessibilityIdentifier("chat-welcome")
-            VStack(spacing: 10) {
+            if let subtitle {
+                Text(subtitle).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: edge)
+                    .padding(.top, -10)
+            }
+            VStack(alignment: align, spacing: 10) {
                 ForEach(examples, id: \.self) { e in
                     Button { send(e) } label: {
                         Text(e).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
@@ -239,6 +276,7 @@ public struct GlyphChat: View {
                     .buttonStyle(.plain)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: edge)
             .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
@@ -262,10 +300,12 @@ public struct GlyphChat: View {
             // The agent's face beside each answer: it works, then nods (or asks, or droops) as the answer lands.
             HStack(alignment: .bottom, spacing: 10) {
                 let other = l.agent.flatMap(GlyphAgent.named)  // another app's agent at work: its own face
-                FaceTile(color: other.map { Color(hex: $0.color) } ?? face,
-                         size: 32, mood: l.working ? .thinking : composing && l.id == model.entries.last?.id ? .listening : l.mood,
-                         seed: FaceMood.seed(other?.id ?? agent), name: other?.name ?? name)
-                    .padding(.bottom, 6)
+                if let face {
+                    FaceTile(color: other.map { Color(hex: $0.color) } ?? face,
+                             size: 32, mood: l.working ? .thinking : composing && l.id == model.entries.last?.id ? .listening : l.mood,
+                             seed: FaceMood.seed(other?.id ?? agent), name: other?.name ?? name)
+                        .padding(.bottom, 6)
+                }
                 reply(l)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,40 +357,13 @@ public struct GlyphChat: View {
         .settle(on: l.working)
     }
 
-    @ViewBuilder private var composer: some View {
-        VStack(spacing: 6) {
-            if typing {
-                HStack(spacing: 10) {
-                    TextField(placeholder, text: $draft)
-                        .focused($field).submitLabel(.send)
-                        .onSubmit { send(draft) }
-                        .padding(.horizontal, 18).padding(.vertical, 12)
-                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-                        .accessibilityIdentifier("chat-field")
-                    Button { send(draft) } label: {
-                        Image(systemName: "arrow.up").font(.headline.weight(.bold)).foregroundStyle(.white)
-                            .frame(width: 44, height: 44).background(tint, in: Circle())
-                    }
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .accessibilityLabel("Send").accessibilityIdentifier("chat-send")
-                }
-                .padding(.horizontal, 16)
-                HStack(spacing: 24) {
-                    Button("Talk instead") { typing = false; field = false }
-                    newChat
-                }.font(.subheadline).tint(tint)
-            } else {
-                TalkButton(tint: tint, caption: caption, onTalking: { on in withAnimation(.snappy) { talking = on } }) { words in send(words) }
-                HStack(spacing: 24) {
-                    Button("Type instead") { typing = true; field = true }.accessibilityIdentifier("chat-type")
-                    newChat
-                }.font(.subheadline).tint(tint)
-            }
-        }
-        .padding(.top, 12).padding(.bottom, 6)
-        .frame(maxWidth: .infinity)
-        .background(Color(uiColor: .systemBackground).opacity(0.96).ignoresSafeArea())
+    /// The family's one input row, `GlyphComposer`, which every Glyph phone screen now draws.
+    private var composer: some View {
+        GlyphComposer(tint: tint, placeholder: placeholder, attach: attach, attachLabel: attachLabel) { words, _ in send(words) }
     }
+
+    /// The welcome's two lines read against the same edge the stack uses.
+    private var edge: Alignment { align == .leading ? .leading : (align == .trailing ? .trailing : .center) }
 
     /// The person's side, alive while they talk or type: three dots in a small bubble.
     private var fruDots: some View {
@@ -372,7 +385,6 @@ public struct GlyphChat: View {
     }
 
     private func send(_ words: String) {
-        draft = ""
         Task { _ = await model.say(words) }
     }
 }

@@ -23,12 +23,17 @@ enum UITest {
         guard on, let i = CommandLine.arguments.firstIndex(of: "--uitest") else { return }
         if i + 1 < CommandLine.arguments.count { out = URL(fileURLWithPath: CommandLine.arguments[i + 1]) }
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        // No sound in a check. A chime is a quarter of an hour apart in use, but the check runs the
+        // clock at 0.1 seconds to the minute, which asks the sound device for one every 1.5 seconds,
+        // and on a Mac whose audio another check already holds, `play()` blocks the main thread for
+        // minutes at a time. That is what stalled the run after the nudge, twice.
+        UserDefaults.standard.set(false, forKey: Clock.chimeKey)
         if let a = CommandLine.arguments.firstIndex(of: "--appearance"), a + 1 < CommandLine.arguments.count {
             NSApp.appearance = NSAppearance(named: CommandLine.arguments[a + 1] == "dark" ? .darkAqua : .aqua)
         }
         // A watchdog: a check that hangs (a modal, a prompt) fails fast instead of holding the shared screen.
         DispatchQueue.global().asyncAfter(deadline: .now() + 600) {
-            print("UI WATCHDOG: no finish in 10 minutes, giving up")
+            print("UI WATCHDOG: no finish in 10 minutes, giving up after \(reached)")
             fflush(stdout)
             exit(2)
         }
@@ -41,8 +46,15 @@ enum UITest {
         }
     }
 
+    /// When the run began, so every line says how long the run had taken when it was written. A
+    /// check that stalls is otherwise indistinguishable from a machine that is merely slow.
+    static let began = Date()
+    /// The last thing checked, so the watchdog can say where the run stopped.
+    static var reached = "nothing yet"
+
     static func check(_ ok: Bool, _ what: String) {
-        print(ok ? "  PASS  \(what)" : "  FAIL  \(what)")
+        reached = what
+        print(String(format: "  %@  %6.1fs  %@", ok ? "PASS" : "FAIL", Date().timeIntervalSince(began), what))
         fflush(stdout)
         if !ok { failures += 1 }
     }

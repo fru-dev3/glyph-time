@@ -4,7 +4,7 @@
 minutes, every session saved to your vault as plain files.
 
 Its page is [glyph.fru.dev/time](https://glyph.fru.dev/time). Part of the
-[Glyph family](https://glyph.fru.dev) by [fru.dev](https://fru.dev): Glyph Studio, Glyph Jot,
+[Glyph family](https://glyph.fru.dev) by [fru.dev](https://fru.dev): Glyph Bot, Glyph Jot,
 Glyph Ibis and Glyph Rig, plus the tools Glyph Arena, Glyph Cast and Glyph Time.
 
 ## Install
@@ -60,14 +60,14 @@ Apple silicon. It lives in the menu bar and on the right edge of the screen; the
   CSV or Markdown into `exports/` beside the sessions. Sessions from every device, the phone too.
 - **Where your time went** (History, any period): the top apps, the top sites and each project's top
   windows, as green bars with each one's time and share. It needs Track apps and tabs (below).
-- **Track apps and tabs** (Settings, opt-in; on by default only when the folder is a Glyph Studio
+- **Track apps and tabs** (Settings, opt-in; on by default only when the folder is a Glyph Bot
   vault): while you are at the Mac, session or not, the app in front, its window's title
   (Accessibility) and, in Safari and Chrome (Brave and Edge too), the front tab's title and site
   (Automation: macOS asks once per browser). Away (the same idle time as the clock), locked or
   asleep, nothing is recorded. A running session's project goes on each stretch. Private and
   incognito windows keep only the app's name. **Never record** lists apps (by name or bundle id) and
   sites (with their subdomains) that leave no line at all; it starts with the password apps.
-- **Filed deadlines**: in a Glyph Studio vault, the due, expiry and renewal dates the document filer
+- **Filed deadlines**: in a Glyph Bot vault, the due, expiry and renewal dates the document filer
   writes into each filed document's note ring as a notification, once each: 7 days before at 09:00
   (or on the day at 09:00 when that has passed), for dates in the next 90 days. Read at launch and
   every 6 hours; a document taken back takes its reminder with it. Mac only for now.
@@ -96,12 +96,15 @@ or restart and the clock picks up where the lines say.
 A session keeps only the project name and the front app's bundle id: never a window title, a URL
 or anything you typed. Choose the folder in Settings:
 
-- a **Glyph Studio vault**: sessions in `data/apps/time/sessions/`, and a short Markdown summary
+- a **Glyph Bot vault**: sessions in `data/apps/time/sessions/`, and a short Markdown summary
   (today, this week, last week by project, this week by device) at
   `data/domains/time/source/apps/time/summary.md`, where Studio and your agents read it;
 - any other folder: `.glyph-time/sessions/` inside it;
 - none, or the folder is away: `~/Library/Application Support/Glyph Time/`, as an outbox and never
-  as a second store. What was written while the folder was away folds into it the moment it is
+  as a second store. The same holds for any folder that stops being the one in use: a plain folder
+  that later gains a vault, and a folder you point away from in Settings. Glyph Time remembers
+  every folder it has written to and folds all of them into the one in use, so changing your mind
+  about where sessions live never leaves hours behind. What was written while the folder was away folds into it the moment it is
   back: sessions and activity line by line into the file of the same name (the same line never
   twice), and everything else as whole files (a capture, a project note, an export) carried over
   only into a name that is free. A name already taken is left where it is rather than merged: two
@@ -163,6 +166,7 @@ every Glyph app that records time.
 cat Packages/GlyphCore/Sources/GlyphVault/TimeLog.swift TimeLogCheck.swift | swift -   # the format
 cat Packages/GlyphCore/Sources/GlyphVault/Spoken.swift Shared/VoiceParse.swift Shared/Schedule.swift VoiceParseCheck.swift | swift -   # what a sentence means
 cat Sources/GlyphTime/Activity.swift Shared/FiledReminders.swift ActivityCheck.swift | swift -                      # apps, tabs, captures
+cat Packages/GlyphCore/Sources/GlyphVault/{Spoken,TimeLog}.swift Shared/{VoiceParse,Schedule,TimeAnswer}.swift TimeAnswerCheck.swift | swift -   # the chat's own answers
 ./scripts/ui-check.sh <out dir>                                                           # the app
 ```
 
@@ -262,7 +266,7 @@ Accessibility needed for it), `CGEventSource` for idle time.
   with a stopwatch for a head, chosen for the family. Nothing else changed.
 - **0.1.0** (2026-10-27): first release. The edge clock, nudges, countdowns, idle, lock and
   sleep, projects guessed from the front repo, the menu bar with today's projects, sessions as
-  plain files and a summary for Glyph Studio.
+  plain files and a summary for Glyph Bot.
 
 ## License
 

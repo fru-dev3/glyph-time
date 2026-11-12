@@ -1,6 +1,6 @@
 import Foundation
 
-// The vault's objects (Glyph CRM's People, Places, Products and Things, plus Glyph Studio's
+// The vault's objects (Glyph CRM's People, Places, Orgs and Things, plus Glyph Bot's
 // projects and domains), read from the files, so a capture is filed under the same ids the CRM
 // uses. No database: `data/entities/<kind>/<slug>/entity.md` is the truth.
 // The layout is in docs/vault-format.md, "Studio links".
@@ -8,13 +8,13 @@ import Foundation
 /// A Studio object a capture can link to.
 public struct StudioObject: Hashable, Sendable, Identifiable {
     public enum Kind: String, CaseIterable, Sendable {
-        case domain, person, product, project, place, thing
+        case domain, person, org, project, place, thing
 
         /// The id's prefix: `person/ken-lee`, `org/acme`, `mission/launch`, `domain/career`.
         public var prefix: String {
             switch self {
             case .person: "person"
-            case .product: "org"
+            case .org: "org"
             case .project: "mission"
             case .domain: "domain"
             case .place: "place"
@@ -27,20 +27,20 @@ public struct StudioObject: Hashable, Sendable, Identifiable {
             switch self {
             case .person: "people"
             case .place: "places"
-            case .product: "orgs"
+            case .org: "orgs"
             case .thing: "things"
             case .project, .domain: nil
             }
         }
 
         /// Glyph CRM's four kinds, the ones a capture can make.
-        public static let entities: [Kind] = [.person, .place, .product, .thing]
+        public static let entities: [Kind] = [.person, .place, .org, .thing]
 
         /// Studio's names, plural and one.
         public var label: String {
             switch self {
             case .person: "People"
-            case .product: "Products"
+            case .org: "Orgs"
             case .project: "Projects"
             case .domain: "Domains"
             case .place: "Places"
@@ -51,7 +51,7 @@ public struct StudioObject: Hashable, Sendable, Identifiable {
         public var singular: String {
             switch self {
             case .person: "Person"
-            case .product: "Product"
+            case .org: "Org"
             case .project: "Project"
             case .domain: "Domain"
             case .place: "Place"
@@ -106,19 +106,19 @@ public struct StudioDirectory: Sendable, Equatable {
                                         aliases: StudioDirectory.list(f["aliases"]), kind: kind))
             }
         }
-        // Products are one list over org pages and app records: an app whose id, title or
-        // company is an org's slug shows on that org; any other app is a product of its own.
+        // Orgs are one list over org pages and app records: an app whose id, title or
+        // company is an org's slug shows on that org; any other app is an org of its own.
         let apps = data.appending(path: "apps")
         for dir in StudioDirectory.folders(apps) {
             let m = (try? JSONSerialization.jsonObject(with: Data(contentsOf: apps.appending(path: dir).appending(path: "manifest.json")))) as? [String: Any] ?? [:]
             let title = [m["title"], m["name"]].compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? dir
             let keys = [m["company"] as? String, dir, title].compactMap { $0 }.map { "org/" + StudioDirectory.slug($0) }
-            if let i = out.firstIndex(where: { $0.kind == .product && keys.contains($0.id) }) {
+            if let i = out.firstIndex(where: { $0.kind == .org && keys.contains($0.id) }) {
                 if title.caseInsensitiveCompare(out[i].name) != .orderedSame, !out[i].aliases.contains(title) { out[i].aliases.append(title) }
                 continue
             }
             let id = "org/" + StudioDirectory.slug(title)
-            if id != "org/", !out.contains(where: { $0.id == id }) { out.append(StudioObject(id: id, name: title, kind: .product)) }
+            if id != "org/", !out.contains(where: { $0.id == id }) { out.append(StudioObject(id: id, name: title, kind: .org)) }
         }
         let missions = data.appending(path: "missions")
         for slug in StudioDirectory.folders(missions) {
@@ -264,7 +264,7 @@ extension Vault {
     }
 
     /// Works out the guesses for a conversation against Studio and saves them: Studio people
-    /// the call names, products the model heard that Studio has and the call says, people
+    /// the call names, orgs the model heard that Studio has and the call says, people
     /// the model heard that Studio has no page for, up to three topics. Nothing linked or
     /// dismissed comes back.
     @discardableResult
@@ -284,7 +284,7 @@ extension Vault {
             if !meta.links.contains(o.id), !s.dismissed.contains(o.id), !s.links.contains(o.id) { s.links.append(o.id) }
         }
         for p in studio.peopleMentioned(in: hay) { add(p) }
-        for c in heard.companies where said(c) { if let o = studio.match(c, .product) { add(o) } }
+        for c in heard.companies where said(c) { if let o = studio.match(c, .org) { add(o) } }
         let named = (meta.links + s.links).compactMap { studio.object($0)?.name }
         for p in heard.people where said(p) {
             let name = Entity.cleanName(p)
@@ -342,7 +342,7 @@ extension Vault {
             let key = kind.rawValue + "|" + name.lowercased()
             if let id = ids[key] { return id }
             if failed.contains(key) { return nil }
-            let skind: StudioObject.Kind = kind == .person ? .person : .product
+            let skind: StudioObject.Kind = kind == .person ? .person : .org
             let note = notes.first { $0.kind == kind && $0.name.caseInsensitiveCompare(name) == .orderedSame }
             var id = ([name] + (note?.aliases ?? [])).lazy.compactMap { studio.match($0, skind)?.id }.first
             var created = false

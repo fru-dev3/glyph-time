@@ -200,7 +200,13 @@ extension UITest {
         check(h.compare && historyFrames["history-compare"] != nil, "Compare shows this week against last week")
         await windowShot("24-history-compare")
         h.setInitiative("acme-api", "Client work")
-        h.setInitiative("northwind", "Client work")
+        // northwind is cleared rather than assumed clear. Project notes live on disk and outlive
+        // the run, so an earlier run that labelled northwind leaves "Client work" on it, and this
+        // check then reads a label it never set. With both projects labelled there is one slice
+        // where the assertion below needs two: a named one first and the unassigned one last.
+        // Today's seed is acme-api, northwind, acme-api, so on a Monday, when the week in range
+        // holds only today, those two are every project there is and nothing is left unassigned.
+        h.setInitiative("northwind", nil)
         h.link("acme-api", "goal/g-test01", on: true)
         h.link("acme-api", "product/acme-corp", on: true)
         let notes = ProjectNote.read(MacHistory.notesFolder)
@@ -208,7 +214,7 @@ extension UITest {
         let noteText = (try? String(contentsOf: MacHistory.notesFolder.appending(path: "acme-api.md"), encoding: .utf8)) ?? ""
         check(noteText.hasPrefix("---\nproject: acme-api\ninitiative: Client work\nentities: [goal/g-test01, product/acme-corp]\n---"), "the note is plain front matter with an entities: line")
         let byInit = HistoryMath.byInitiative(h.inRange, notes: h.notes)
-        check(byInit.first?.name == "Client work" && byInit.last?.name == HistoryMath.noInitiative, "by initiative: Client work first, the rest last")
+        check(byInit.first?.name == "Client work" && byInit.last?.name == HistoryMath.noInitiative, "by initiative: Client work first, the rest last (\(byInit.map { "\($0.name) \($0.projects)" }))")
         if Store.vault != nil {
             check(h.goalTitles["g-test01"] == "Ship the Acme beta by December", "Omega goals read from the domains' goals.md")
             check(HistoryMath.byGoal(h.inRange, notes: h.notes, titles: h.goalTitles).first?.name == "Ship the Acme beta by December", "by goal names the goal")
@@ -359,6 +365,41 @@ extension UITest {
         try? FileManager.default.removeItem(at: clash)
         try? FileManager.default.removeItem(at: inClash.deletingLastPathComponent())
         try? FileManager.default.removeItem(at: MacHistory.notesFolder.appending(path: "second.md"))
+        // A folder stops being the one in use in three ways, and all three strand what was written
+        // there: the vault goes away (the outbox), a chosen folder gains a vault underneath it, or a
+        // different folder is chosen in Settings. The last cannot be worked out from the one in use,
+        // so it is remembered; the others need no memory (Fru, 2026-10-31, answered 2026-11-07: now).
+        // Only in a vault: with a plain folder chosen, `.glyph-time` IS where it writes, so there is
+        // nothing stranded there and the sweep rightly leaves it alone.
+        if Store.vault != nil {
+        let gained = Store.chosen!.appending(path: ".glyph-time/sessions") // what a plain folder used
+        let before = TimeEvent("start", at: .now.addingTimeInterval(-1500), host: Store.host, project: "plain-folder-work")
+        try? TimeLog.append(before, to: gained)
+        try? TimeLog.append(TimeEvent("stop", at: .now.addingTimeInterval(-1200), host: Store.host), to: gained)
+        check(Store.drainOutbox() == 2, "a folder that has gained a vault folds its sessions in, with nothing remembered")
+        MacHistory.refresh()
+        check(h.projects.contains { $0.name == "plain-folder-work" }, "and they are in History")
+        for s in h.sessions where s.project == "plain-folder-work" { h.delete(s) }
+        }
+
+        let old = URL(filePath: NSTemporaryDirectory()).appending(path: "glyph-time-old-\(UUID().uuidString)")
+        let oldSessions = old.appending(path: "sessions")
+        try? FileManager.default.createDirectory(at: oldSessions, withIntermediateDirectories: true)
+        // Times of its own: a stop line is the same bytes wherever it came from, so one that matches
+        // a line already in the vault is skipped as a repeat, which is the fold working and would
+        // read here as a line lost.
+        try? TimeLog.append(TimeEvent("start", at: .now.addingTimeInterval(-1740), host: Store.host, project: "old-folder-work"), to: oldSessions)
+        try? TimeLog.append(TimeEvent("stop", at: .now.addingTimeInterval(-1680), host: Store.host), to: oldSessions)
+        check(Store.drainOutbox() == 0, "a folder never written to by this Mac is not touched")
+        Store.knownRoots = Store.knownRoots + [old.path] // as writing there would have left it
+        let folded = Store.drainOutbox()
+        check(folded == 2, "a folder pointed away from in Settings folds in, because it was remembered (folded \(folded), roots \(Store.knownRoots.count), waiting \(((try? FileManager.default.contentsOfDirectory(atPath: oldSessions.path)) ?? []).count))")
+        MacHistory.refresh()
+        check(h.projects.contains { $0.name == "old-folder-work" }, "and its sessions are in History too")
+        check(((try? FileManager.default.contentsOfDirectory(atPath: oldSessions.path)) ?? []).isEmpty, "and nothing is left waiting there")
+        for s in h.sessions where s.project == "old-folder-work" { h.delete(s) }
+        Store.knownRoots = Store.knownRoots.filter { $0 != old.path }
+        try? FileManager.default.removeItem(at: old)
 
         print("History: a project")
         // Opened through the window's own entry point rather than by clicking the breakdown slice,

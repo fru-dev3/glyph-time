@@ -373,7 +373,7 @@ public struct Filing: Sendable {
             if let o = kinds.lazy.compactMap({ dir.match(n, $0) }).first { if !ids.contains(o.id) { ids.append(o.id) } }
             else if !wanted.contains(where: { $0.name.lowercased() == n.lowercased() }) { wanted.append((propose, n)) }
         }
-        add(r.fields.issuer, [.product], propose: "product")
+        add(r.fields.issuer, [.org], propose: "org")
         r.fields.people.forEach { add($0, [.person], propose: "person") }
         r.fields.about.forEach { add($0, [.place, .thing], propose: $0.first?.isNumber == true ? "place" : "thing") }
         return (ids, wanted)
@@ -406,14 +406,108 @@ public struct Filing: Sendable {
     /// `records/memory/expiring.md`, made again from every note: due, expiry and renewal dates in the next 12 months.
     public func writeExpiring(now: Date = .now) throws {
         guard domains().contains("records") else { return }
+        let rows = expiring(now: now)
+        func lines(_ rs: [Obligation]) -> String {
+            rs.map { o in
+                // The collapsed copies are named in the line, so the count is never a silent omission.
+                let also = o.copies > 1 ? " (\(o.copies) copies on file)" : ""
+                return "- \(o.date) \(o.kind): [\(o.note.title)](<../../../../\(o.note.md)>)\(also)"
+            }.joined(separator: "\n") + "\n"
+        }
+        var text = "# Expiring\n\nDue, expiry and renewal dates from filed documents, the next 12 months. Made by the filer; edits here are replaced.\n\n"
+        text += rows.isEmpty ? "Nothing in the next 12 months.\n" : lines(rows)
+        // The gap worth more than the forward list when the filed documents are mostly historical.
+        let gaps = lapsed(now: now)
+        if !gaps.isEmpty {
+            text += "\n## Lapsed, nothing newer filed\n\nThese dates have passed and no later document from the same issuer of the same type is on file. Either the replacement was never filed, or the thing really has lapsed.\n\n"
+            text += lines(gaps)
+        }
+        if read("data/domains/records/memory/expiring.md") != text { try write("data/domains/records/memory/expiring.md", text) }
+    }
+
+    /// One dated obligation: the document that carries it, what happens on that day, and how many
+    /// filed copies of the same paper were collapsed into this row. `copies` exists so a reader can
+    /// SAY a copy was suppressed; an absence nobody can see is a lie by omission.
+    public struct Obligation: Sendable, Identifiable {
+        public let note: FiledNote
+        public let kind: String      // expires, renews, due
+        public let date: String      // YYYY-MM-DD
+        public let copies: Int       // 1 when this is the only copy on file
+        public var id: String { "\(note.md)|\(kind)|\(date)" }
+    }
+
+    /// Every due, expiry and renewal in the next 12 months, one row per obligation, soonest first.
+    /// `writeExpiring` turns this into the markdown an agent reads; an app shows it as a pane. Both
+    /// call this, so the list a person sees and the list an agent reads can never disagree.
+    public func expiring(now: Date = .now) -> [Obligation] {
         let today = ScanText.day.string(from: now)
         let end = ScanText.day.string(from: now.addingTimeInterval(366 * 86_400))
-        let rows = index().filter { $0.status == "filed" }.flatMap { n in n.deadlines.map { (n, $0) } }
-            .filter { $0.1.date >= today && $0.1.date <= end }.sorted { ($0.1.date, $0.0.title) < ($1.1.date, $1.0.title) }
-        var text = "# Expiring\n\nDue, expiry and renewal dates from filed documents, the next 12 months. Made by the filer; edits here are replaced.\n\n"
-        text += rows.isEmpty ? "Nothing in the next 12 months.\n"
-            : rows.map { "- \($0.1.date) \($0.1.kind): [\($0.0.title)](<../../../../\($0.0.md)>)" }.joined(separator: "\n") + "\n"
-        if read("data/domains/records/memory/expiring.md") != text { try write("data/domains/records/memory/expiring.md", text) }
+        let all = index().filter { $0.status == "filed" }.flatMap { n in n.deadlines.map { (n, $0) } }
+            .filter { $0.1.date >= today && $0.1.date <= end }
+        return Self.oneRowPerObligation(all)
+    }
+
+    /// The gap the Expiring list cannot show: obligations whose date has already passed and for which
+    /// no newer document of the same kind was ever filed. A policy that expired with a replacement on
+    /// disk is fine; one that expired with nothing after it is either unfiled or genuinely lapsed, and
+    /// only the person can tell which. Looks back `months` (two years by default), because a date from
+    /// 2009 is history, not a gap.
+    ///
+    /// "Nothing newer" means: among every filed document from the same issuer of the same type, this
+    /// one carries the latest document date. If a replacement had been filed its own date would be
+    /// later, so it would take this one's place and nothing would be reported.
+    public func lapsed(now: Date = .now, months: Int = 24) -> [Obligation] {
+        let today = ScanText.day.string(from: now)
+        let from = ScanText.day.string(from: now.addingTimeInterval(-Double(months) * 30.5 * 86_400))
+        let filed = index().filter { $0.status == "filed" }
+        // The latest document date on file per issuer and type, which is what a replacement would move.
+        var newest: [String: String] = [:]
+        for n in filed where !n.issuer.isEmpty {
+            let k = n.issuer.lowercased() + "|" + n.type.lowercased()
+            if n.date > (newest[k] ?? "") { newest[k] = n.date }
+        }
+        let rows = filed.flatMap { n in n.deadlines.map { (n, $0) } }
+            .filter { r in
+                guard r.1.date < today, r.1.date >= from, !r.0.issuer.isEmpty, !r.0.date.isEmpty else { return false }
+                return newest[r.0.issuer.lowercased() + "|" + r.0.type.lowercased()] == r.0.date
+            }
+        // Most recently lapsed first: the likeliest to still matter.
+        return Self.oneRowPerObligation(rows).sorted { $0.date > $1.date }
+    }
+
+    /// One row per real obligation, not one per copy of the paper. The same policy is filed under
+    /// several domains and re-rendered by the issuer, so bytes and even normalized text differ while
+    /// the obligation is one: on one real vault 38 rows are 18 by sha256, 15 by text, 12 by this key.
+    /// The key is the design's own duplicate rule (same issuer, type, document date, last 4) plus the
+    /// deadline itself, so two genuinely different obligations are never merged into one line.
+    /// The copy kept is the one under `source/` (the user's own material, per VAULT.md), then the
+    /// shortest path, then alphabetical, so the list is the same on every machine and every run; the
+    /// ones not kept are counted, never silently dropped.
+    static func oneRowPerObligation(_ rows: [(FiledNote, (kind: String, date: String))]) -> [Obligation] {
+        var at: [[String]: Int] = [:]
+        var kept: [(FiledNote, (kind: String, date: String))] = []
+        var copies: [Int] = []
+        for r in rows {
+            let key = [r.1.date, r.1.kind, r.0.issuer, r.0.type, r.0.date, r.0.last4.sorted().joined(separator: ",")]
+            if let i = at[key] {
+                copies[i] += 1
+                if preferred(r.0, over: kept[i].0) { kept[i] = r }
+            } else {
+                at[key] = kept.count
+                kept.append(r)
+                copies.append(1)
+            }
+        }
+        return zip(kept, copies).map { Obligation(note: $0.0, kind: $0.1.kind, date: $0.1.date, copies: $1) }
+            .sorted { ($0.date, $0.note.title, $0.note.md) < ($1.date, $1.note.title, $1.note.md) }
+    }
+
+    /// Which copy of one document the list should point at.
+    static func preferred(_ a: FiledNote, over b: FiledNote) -> Bool {
+        let sa = a.md.contains("/source/"), sb = b.md.contains("/source/")
+        if sa != sb { return sa }
+        if a.md.count != b.md.count { return a.md.count < b.md.count }
+        return a.md < b.md
     }
 
     public func reviewIDs() -> [String] {

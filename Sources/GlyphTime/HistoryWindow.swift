@@ -214,9 +214,10 @@ struct HistoryMac: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .padding(.top, 28) // under the window's buttons
+            .historyID("sidebar")
+            .safeAreaInset(edge: .bottom, spacing: 0) { vaultFoot }
             .frame(width: 240)
             .background(Color(nsColor: .underPageBackgroundColor).opacity(0.5))
-            .historyID("sidebar")
             Divider()
             GeometryReader { g in
                 ScrollView {
@@ -252,6 +253,24 @@ struct HistoryMac: View {
             Button(p.hidden ? "Show in Recent" : "Hide from Recent") { p.hidden ? history.show(p.name) : history.hide(p.name) }
         }
         .historyID("sidebar-\(p.name)")
+    }
+
+    /// Where the lines are going, under the projects: the same line the card and the phone show, so
+    /// the answer to "is this being written down" is in sight wherever you are looking.
+    private var vaultFoot: some View {
+        HStack(spacing: 7) {
+            Circle().fill(Store.connected ? Color.office : Color.secondary)
+                .frame(width: 7, height: 7)
+            Text(Store.connected ? "Vault connected" : "Vault out of reach")
+            Text("·").foregroundStyle(.tertiary)
+            Text("\(Store.waiting) waiting").monospacedDigit()
+            Spacer()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .historyID("sidebar-vault")
     }
 
     /// Back to the overview, compare, export and refresh: one row above the page.

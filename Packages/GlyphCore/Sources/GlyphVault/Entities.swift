@@ -142,7 +142,7 @@ extension EntityIndex {
 }
 
 /// Topic tags: lower case, no `#`, words joined by `-`, no repeats.
-func tidyTags(_ tags: [String]) -> [String] {
+public func tidyTags(_ tags: [String]) -> [String] {
     var out: [String] = []
     for t in tags {
         let bare = t.trimmingCharacters(in: .whitespacesAndNewlines).drop(while: { $0 == "#" })

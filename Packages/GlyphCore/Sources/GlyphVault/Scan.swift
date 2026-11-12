@@ -10,7 +10,7 @@ import Foundation
 /// full number lives inside the PDF, never in the note.
 public struct ScanFields: Codable, Equatable, Sendable {
     public var type: String
-    /// Who sent or issued it (a Product in Glyph CRM): "Northwind Mutual".
+    /// Who sent or issued it (an Org in Glyph CRM): "Northwind Mutual".
     public var issuer: String
     /// People named on it, by name.
     public var people: [String]

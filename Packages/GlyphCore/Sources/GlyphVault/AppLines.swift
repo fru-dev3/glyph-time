@@ -58,10 +58,10 @@ public enum CRMProposalLine {
         return String(SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
     }
 
-    /// CRMKit's kinds: person, place, product (a company, brand or app; stored as orgs), thing. "org" is a product.
+    /// CRMKit's kinds: person, place, org (a company, brand or app, stored under orgs), thing.
     public static func kind(_ said: String) -> String {
         let k = said.lowercased()
-        return ["org", "company", "organization", "business", "brand"].contains(k) ? "product" : ["person", "place", "product", "thing"].contains(k) ? k : "person"
+        return ["org", "company", "organization", "business", "brand", "product"].contains(k) ? "org" : ["person", "place", "thing"].contains(k) ? k : "person"
     }
 
     /// A suggestion: about an entity (new, or `existing` by its permanent id), an attribute (`key`, `value`) or a

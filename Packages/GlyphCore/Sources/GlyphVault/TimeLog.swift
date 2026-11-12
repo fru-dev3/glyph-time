@@ -321,6 +321,19 @@ public enum TimeLog {
         return set.values.sorted { $0.at! < $1.at! }
     }
 
+    /// The session that is open now, from any device's lines, newest start first. Nil when
+    /// nothing is open.
+    ///
+    /// A session is only open until someone writes its `stop`, and nothing writes that for an app
+    /// that was killed or a Mac that never woke, so a file can hold a session left open for days.
+    /// Anything older than 18 hours is not "now" however the file reads. Glyph Native's Now card
+    /// carried this rule privately; Glyph Time on the iPhone needs the same answer about a Mac's
+    /// timer, so the rule lives next to the lines it is about.
+    // ponytail: 18 hours, no setting. A real session that long is already a mistake in the file.
+    public static func open(_ sessions: [TimeSession], now: Date = .now) -> TimeSession? {
+        sessions.last { $0.end == nil && now.timeIntervalSince($0.start) < 18 * 3600 }
+    }
+
     /// Seconds per project for sessions that started in [from, to), biggest first. A session is
     /// counted on the day it started.
     // ponytail: no splitting at midnight; split by day if late-night sessions start to matter.
@@ -345,7 +358,7 @@ public enum TimeLog {
         return m >= 60 ? (m % 60 == 0 ? "\(m / 60) h" : "\(m / 60) h \(m % 60) min") : "\(m) min"
     }
 
-    /// The short read for Glyph Studio and any agent: today, this week and last week by project,
+    /// The short read for Glyph Bot and any agent: today, this week and last week by project,
     /// and this week by device, from every device's sessions. Plain Markdown, no times of day.
     public static func summary(_ sessions: [TimeSession], now: Date = .now, calendar: Calendar = .current) -> String {
         var cal = calendar

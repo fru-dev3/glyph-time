@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Runs Glyph Time's UI check twice: a plain folder, then a stand-in Glyph Studio vault. Run it in a
+# Runs Glyph Time's UI check twice: a plain folder, then a stand-in Glyph Bot vault. Run it in a
 # logged-in session (it opens real windows); it touches no real data. Pictures go to <out dir>.
 # Usage: scripts/ui-check.sh [out dir]
 set -euo pipefail

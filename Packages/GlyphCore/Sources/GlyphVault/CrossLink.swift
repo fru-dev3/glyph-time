@@ -10,7 +10,7 @@ import Foundation
 public struct FilePlace: Codable, Hashable, Sendable, Identifiable {
     public var path: String     // vault-relative folder: "data/entities/orgs/acme"
     public var label: String    // "Acme"
-    public var kind: String     // domain, application, person, product, place, thing, project, or the vault's own
+    public var kind: String     // domain, application, person, org, place, thing, project, or the vault's own
     public var reason: String?  // why Glyph suggests it ("an interview with Acme")
     public var id: String { path }
     public init(path: String, label: String, kind: String, reason: String? = nil) {
@@ -46,7 +46,7 @@ public enum CrossLink {
                 out.append(FilePlace(path: "data/domains/\(d)/memory/current/applications/\(a)", label: title(a), kind: "application"))
             }
         }
-        for (folder, kind) in [("people", "person"), ("orgs", "product"), ("places", "place"), ("things", "thing")] {
+        for (folder, kind) in [("people", "person"), ("orgs", "org"), ("places", "place"), ("things", "thing")] {
             for s in dirs("data/entities/\(folder)") where fm.fileExists(atPath: vault.appending(path: "data/entities/\(folder)/\(s)/entity.md").path) {
                 out.append(FilePlace(path: "data/entities/\(folder)/\(s)", label: name("data/entities/\(folder)/\(s)/entity.md", s), kind: kind))
             }
@@ -80,7 +80,7 @@ public enum CrossLink {
         if let exact = places.first(where: { $0.path == said }) { return exact }
         // "my Acme application": its application folder when there is one.
         let places = said.lowercased().contains("application") ? places.filter { $0.kind == "application" }.nilIfEmpty ?? places : places
-        let rank = ["application": 0, "product": 1, "person": 2, "project": 3, "domain": 5]
+        let rank = ["application": 0, "org": 1, "person": 2, "project": 3, "domain": 5]
         func key(_ p: FilePlace) -> [String] { [p.label.lowercased(), title((p.path as NSString).lastPathComponent).lowercased()] }
         let exact = places.filter { key($0).contains(q) }
         let hits = exact.isEmpty ? places.filter { p in key(p).contains { k in words.allSatisfy { k.contains($0) } } } : exact

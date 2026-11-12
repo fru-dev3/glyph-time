@@ -2,7 +2,7 @@ import Foundation
 import FoundationModels
 import GlyphVault
 
-/// Glyph CRM's agent. A new person, place, product or thing (`add_record`) and a note, alias or attribute on one
+/// Glyph CRM's agent. A new person, place, org or thing (`add_record`) and a note, alias or attribute on one
 /// already there (`update_record`) are written straight to its entity page (GlyphVault `CRMPage`, the bytes
 /// Glyph CRM writes) through the hub's /crm routes, with Undo. What needs Fru's yes stays a suggestion in CRM's
 /// review (`data/apps/crm/proposals`): a merge, a name that fits several pages ("Which Ken?"), a name not in CRM
@@ -11,7 +11,7 @@ extension GlyphAgent {
     public static let crm = GlyphAgent(
         id: "crm", name: "CRM", color: "2F5FB3",
         instructions: """
-        You are Glyph CRM's agent. Someone new (a person, place, product or thing) with what was said: add_record. A note, \
+        You are Glyph CRM's agent. Someone new (a person, place, org or thing) with what was said: add_record. A note, \
         an alias or an attribute for someone already known: update_record. Two records that are the same: merge_records. \
         When unsure whether it is someone new, call update_record; it asks when the name fits several.
         """,
@@ -25,9 +25,9 @@ extension GlyphAgent {
 
 public struct CRMAddRecord: Tool {
     public let name = "add_record"
-    public let description = "Add a new person, place, product or thing to Glyph CRM, with a note and links."
+    public let description = "Add a new person, place, org or thing to Glyph CRM, with a note and links."
     @Generable public struct Arguments {
-        @Guide(description: "What it is", .anyOf(["person", "place", "product", "thing"])) public var kind: String
+        @Guide(description: "What it is", .anyOf(["person", "place", "org", "thing"])) public var kind: String
         @Guide(description: "Its name, as said, like Ken Lee.") public var name: String
         @Guide(description: "What was said about it.") public var note: String
         @Guide(description: "Who or what it is linked to, by name, like Acme. Empty when none.") public var linkTo: [String]
@@ -71,9 +71,9 @@ public struct CRMMergeRecords: Tool {
 
 public struct CRMPropose: Tool {
     public let name = "propose"
-    public let description = "Suggest a person, place, product or thing for Glyph CRM, with a note; it waits there for a yes."
+    public let description = "Suggest a person, place, org or thing for Glyph CRM, with a note; it waits there for a yes."
     @Generable public struct Arguments {
-        @Guide(description: "What it is", .anyOf(["person", "place", "product", "thing"])) public var kind: String
+        @Guide(description: "What it is", .anyOf(["person", "place", "org", "thing"])) public var kind: String
         @Guide(description: "Its name, as said, like Ken.") public var name: String
         @Guide(description: "What was said about it.") public var note: String
     }

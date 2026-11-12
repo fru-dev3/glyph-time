@@ -242,4 +242,67 @@ import Testing
         let again = await filer.backfill("data/domains", inPlace: true, report: nil)
         #expect(again.contains("0 read"), "\(again)")  // the reviewed one counts as noted too
     }
+    /// One row per obligation, not one per copy. One real vault had the same policy under four domains
+    /// and in four renders, so 38 lines were 12 obligations; sha256 alone would still have shown 18.
+    @Test func expiringShowsOneRowPerObligationAndKeepsTheSourceCopy() {
+        func note(_ md: String, sha: String, issuer: String = "Acme Insurance", last4: [String] = ["4821"]) -> FiledNote {
+            FiledNote(md: md, id: String(sha.prefix(8)), sha256: sha, textSHA256: "t-" + sha, title: "2026-10-01 \(issuer) Insurance Policy",
+                      issuer: issuer, type: "Insurance Policy", date: "2026-10-01", last4: last4,
+                      deadlines: [(kind: "expires", date: "2027-10-01")], status: "filed")
+        }
+        // Four copies of one policy: two domains times two renders of the same paper.
+        let copies = [note("data/domains/insurance/memory/current/a/policy.md", sha: "a1"),
+                      note("data/domains/insurance/source/files/policy.md", sha: "a2"),
+                      note("data/domains/real-estate/memory/current/x/y/policy.md", sha: "a3"),
+                      note("data/domains/real-estate/source/files/policy.md", sha: "a4")]
+        // A different policy from a different issuer, same expiry day: a second real obligation.
+        let other = note("data/domains/insurance/source/files/other.md", sha: "b1", issuer: "Globex Insurance", last4: ["7781"])
+        let rows = (copies + [other]).flatMap { n in n.deadlines.map { (n, $0) } }
+        let out = Filing.oneRowPerObligation(rows)
+        #expect(out.count == 2)
+        #expect(Set(out.map(\.note.issuer)) == ["Acme Insurance", "Globex Insurance"])
+        // The copy kept is under source/, and the shortest such path, never a memory/current one.
+        let acme = out.first { $0.note.issuer == "Acme Insurance" }!
+        #expect(acme.note.md == "data/domains/insurance/source/files/policy.md")
+        // The suppressed copies are counted, so a reader can say a copy was collapsed.
+        #expect(acme.copies == 4)
+        #expect(out.first { $0.note.issuer == "Globex Insurance" }!.copies == 1)
+        // Same input in any order gives the same answer (two machines, one list).
+        #expect(Filing.oneRowPerObligation(rows.reversed()).map(\.note.md) == out.map(\.note.md))
+    }
+
+    /// A lapsed obligation is only a gap when nothing newer of the same kind was filed after it.
+    @Test func lapsedReportsOnlyWhatHasNoReplacement() throws {
+        let root = try Self.vault()
+        let filing = Filing(root: root)
+        // Three policies: one expired with a replacement on file, one expired with nothing after it,
+        // and one that expired long ago (history, not a gap).
+        func put(_ name: String, issuer: String, docDate: String, expires: String) throws {
+            let md = """
+                ---
+                title: "\(docDate) \(issuer) Insurance Policy"
+                kind: scan
+                type: "Insurance Policy"
+                issuer: "\(issuer)"
+                date: \(docDate)
+                deadlines: [{"date":"\(expires)","kind":"expires"}]
+                references: []
+                status: filed
+                ---
+
+                """
+            try md.write(to: root.appending(path: "data/domains/insurance/source/files/\(name).md"), atomically: true, encoding: .utf8)
+        }
+        try put("acme-old", issuer: "Acme Insurance", docDate: "2024-01-01", expires: Self.day(-400, "yyyy-MM-dd"))
+        try put("acme-new", issuer: "Acme Insurance", docDate: "2025-06-01", expires: Self.day(200, "yyyy-MM-dd"))
+        try put("globex", issuer: "Globex Insurance", docDate: "2025-02-01", expires: Self.day(-40, "yyyy-MM-dd"))
+        try put("ancient", issuer: "Initech Insurance", docDate: "2009-01-01", expires: "2010-01-01")
+
+        let gaps = filing.lapsed()
+        // Only Globex: Acme's expiry was replaced by a newer Acme policy, and Initech is history.
+        #expect(gaps.map(\.note.issuer) == ["Globex Insurance"])
+        // And it is not in the forward list, which is the whole reason this call exists.
+        #expect(!filing.expiring().contains { $0.note.issuer == "Globex Insurance" })
+    }
+
 }

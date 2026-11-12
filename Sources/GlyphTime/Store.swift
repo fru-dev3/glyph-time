@@ -2,7 +2,7 @@ import AppKit
 import GlyphVault
 import SystemConfiguration
 
-/// Where the sessions go: `<vault>/data/apps/time/sessions/` in a Glyph Studio vault, a hidden
+/// Where the sessions go: `<vault>/data/apps/time/sessions/` in a Glyph Bot vault, a hidden
 /// `.glyph-time/sessions/` in any other folder chosen in Settings, and Application Support when
 /// none is chosen or the folder is away. One file per month per Mac (`TimeLog`).
 ///
@@ -28,7 +28,7 @@ enum Store {
         return URL(filePath: path)
     }
 
-    /// The chosen folder when it is a Glyph Studio vault (it has `data/domains`).
+    /// The chosen folder when it is a Glyph Bot vault (it has `data/domains`).
     static var vault: URL? {
         chosen.flatMap { FileManager.default.fileExists(atPath: $0.appending(path: "data/domains").path) ? $0 : nil }
     }
@@ -61,14 +61,50 @@ enum Store {
     /// The session lines still waiting. The outbox holds whole folders, not one: `sessions/`
     /// beside `activity/` and `captures/`, exactly as the vault does, because Tracking and
     /// Captures hang off the same folder (`Store.folder`'s parent).
-    static func outboxFiles() -> [URL] { logs(in: "sessions") }
+    static func outboxFiles() -> [URL] { waitingRoots().flatMap { logs(in: "sessions", under: $0) } }
 
     private static var outboxRoot: URL { outbox.deletingLastPathComponent() }
     private static var liveRoot: URL { folder.deletingLastPathComponent() }
 
-    private static func logs(in part: String) -> [URL] {
-        guard outboxRoot != liveRoot else { return [] } // away: the outbox IS where it writes
-        let dir = outboxRoot.appending(path: part)
+    /// Every root this Mac has written to. Changing the folder in Settings would otherwise strand
+    /// everything written to the old one: nothing points at it any more, so nothing folds it back.
+    /// Kept here rather than worked out, because a folder no longer chosen cannot be derived from
+    /// one that is (the sweep below covers the rest without remembering anything).
+    static let rootsKey = "knownRoots"
+    static var knownRoots: [String] {
+        get { UserDefaults.standard.stringArray(forKey: rootsKey) ?? [] }
+        set { UserDefaults.standard.set(Array(newValue.suffix(10)), forKey: rootsKey) }
+    }
+
+    /// Written to, so remembered. Called after a line lands, never before: a root that was never
+    /// written to holds nothing to come back for.
+    private static func remember(_ root: URL) {
+        var roots = knownRoots
+        guard !roots.contains(root.path) else { return }
+        roots.append(root.path)
+        knownRoots = roots
+    }
+
+    /// Everywhere this Mac may have left lines, newest last, with the one it writes to now taken
+    /// out. Three ways a folder stops being the one in use, and all three end up here:
+    /// the vault going away (the outbox), a chosen folder gaining a vault underneath it (the hidden
+    /// `.glyph-time` beside it), and a different folder being chosen in Settings (remembered).
+    private static func waitingRoots() -> [URL] {
+        var roots = [outboxRoot]
+        if let chosen { roots.append(chosen.appending(path: ".glyph-time")) }
+        roots += knownRoots.map { URL(filePath: $0) }
+        let live = liveRoot.standardizedFileURL.path
+        var seen = Set<String>()
+        return roots.filter { root in
+            let path = root.standardizedFileURL.path
+            guard path != live, seen.insert(path).inserted else { return false }
+            return FileManager.default.fileExists(atPath: path)
+        }
+    }
+
+    private static func logs(in part: String, under root: URL) -> [URL] {
+        guard root.standardizedFileURL != liveRoot.standardizedFileURL else { return [] } // away: it IS where it writes
+        let dir = root.appending(path: part)
         return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
             .filter { $0.hasSuffix(".jsonl") }.sorted().map { dir.appending(path: $0) }
     }
@@ -90,17 +126,26 @@ enum Store {
     /// 2026-10-31.)
     @discardableResult
     static func drainOutbox() -> Int {
-        guard outboxRoot != liveRoot else { return 0 }
+        var moved = 0
+        for root in waitingRoots() { moved += drain(root) }
+        return moved
+    }
+
+    /// One waiting root into the one in use.
+    private static func drain(_ root: URL) -> Int {
         var moved = 0
         do {
             for part in ["sessions", "activity"] {
-                for file in logs(in: part) { moved += try fold(file, into: liveRoot.appending(path: part)) }
+                for file in logs(in: part, under: root) { moved += try fold(file, into: liveRoot.appending(path: part)) }
             }
             // The bug is never "the fallback folder", it is every shape in it (Glyph Jot, 2026-10-31):
             // Tracking, Captures, the project notes and the exports all hang off this one root.
-            for part in ((try? FileManager.default.contentsOfDirectory(atPath: outboxRoot.path)) ?? []).sorted()
-            where !part.hasPrefix(".") && !["sessions", "activity"].contains(part) {
-                moved += try carry(outboxRoot.appending(path: part), into: liveRoot.appending(path: part))
+            // The shapes Time owns, named rather than discovered. Carrying everything a folder
+            // held swept up what the app keeps for itself and moved it mid-flight: a reminder lost
+            // its fifteen-minute warning that way. The bug is still every shape in the folder, but
+            // the folder is Time’s, so Time names its shapes.
+            for part in ["captures", "projects", "exports"] {
+                moved += try carry(root.appending(path: part), into: liveRoot.appending(path: part))
             }
         } catch {
             problem = "Can't move what is waiting into \(liveRoot.path): \(error.localizedDescription)"
@@ -186,6 +231,7 @@ enum Store {
         if connected { drainOutbox() } // back from an away spell: the waiting lines go in first
         do {
             try TimeLog.append(event, to: folder)
+            remember(liveRoot)
             lastWrite = .now
             problem = connected ? nil : "Vault away. Saving here and folding it back when it returns."
         } catch {
@@ -203,7 +249,7 @@ enum Store {
         return TimeLog.read(folder, months: Set(names.filter { $0.first?.isNumber == true }.map { String($0.prefix(7)) }))
     }
 
-    /// In a Glyph Studio vault with a time domain: the hours by project for today, this week and
+    /// In a Glyph Bot vault with a time domain: the hours by project for today, this week and
     /// last week, every device, at `data/domains/time/source/apps/time/summary.md`, where Studio
     /// reads a domain's sources. Written only when it changed.
     // ponytail: each Mac rewrites it from the same merged files; a hub-only writer if syncs ever clash.
