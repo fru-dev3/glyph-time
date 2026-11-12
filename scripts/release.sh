@@ -13,12 +13,15 @@ identity=$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID A
 version=$(awk -F= '/^VERSION=/{print $2; exit}' scripts/build.sh)
 repo=fru-dev3/glyph-time
 
+# A leftover dist/ or build/ inside the package folder gets scanned by SwiftPM (its Applications link
+# leads to /Applications, and a copied app carries localized resources that break the manifest).
+rm -rf dist build
 echo "building Glyph Time $version"
 SIGN_IDENTITY="$identity" ./scripts/build.sh
 app="build/Glyph Time.app"
 codesign --verify --strict --deep "$app"
 # A public build carries no source path (the user name, home folder).
-if strings -a "$app/Contents/MacOS/GlyphTime" | grep -q '^/Use[r]s/'; then echo "source paths left in the binary"; exit 1; fi
+if grep -qa '/Use[r]s/' "$app/Contents/MacOS/GlyphTime"; then echo "source paths left in the binary"; exit 1; fi
 sig=$(codesign -dvv "$app" 2>&1)
 [[ $sig == *"(runtime)"* ]] || { echo "not signed with the hardened runtime"; exit 1; }
 
